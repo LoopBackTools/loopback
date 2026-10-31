@@ -8,7 +8,7 @@ import {
 	type Reply,
 	type ReplyBody,
 	type UnknownAsk,
-} from "@loopbackhq/sdk";
+} from "@loopbacktools/sdk";
 import {
 	ArrowClockwise,
 	ArrowLeft,

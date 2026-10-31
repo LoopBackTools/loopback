@@ -1,4 +1,4 @@
-import type { AskStatus, Entry, ImageType } from "@loopbackhq/protocol";
+import type { AskStatus, Entry, ImageType } from "@loopbacktools/protocol";
 import { Context, Effect, Layer, Option } from "effect";
 import { SqlClient } from "effect/sql";
 import type { AskRecord, EntryRecord } from "../domain/ask.ts";

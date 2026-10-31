@@ -18,7 +18,7 @@ import {
 	type Snapshot,
 	type ToolReply,
 	type UploadReceipt,
-} from "@loopbackhq/protocol";
+} from "@loopbacktools/protocol";
 import { Clock, Duration, Effect, Option, PubSub } from "effect";
 import {
 	type AskRecord,

@@ -1,4 +1,4 @@
-import { awaitingHuman, type Ask, foldBriefing, type InboxState } from "@loopbackhq/sdk";
+import { awaitingHuman, type Ask, foldBriefing, type InboxState } from "@loopbacktools/sdk";
 import { useEffect, useRef, useState } from "react";
 
 /**

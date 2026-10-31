@@ -1,4 +1,4 @@
-import type { Ask } from "@loopbackhq/sdk";
+import type { Ask } from "@loopbacktools/sdk";
 import { describe, expect, it } from "vitest";
 import { focusOf, nextAfter } from "../src/hooks.ts";
 

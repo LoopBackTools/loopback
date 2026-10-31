@@ -11,7 +11,7 @@ options:
     # types live here, where clients import them.
     emitter-output-dir: "{project-root}/../server/src/generated"
     contracts-output-dir: "{project-root}/src/generated"
-    contracts-package: "@loopbackhq/protocol"
+    contracts-package: "@loopbacktools/protocol"
     seal-object-schemas: true
     regenerate-hint: "pnpm generate"
   "@typespec/openapi3":

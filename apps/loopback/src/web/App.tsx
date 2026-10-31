@@ -1,7 +1,13 @@
 import { Button, Input, Loader, Text } from "@cloudflare/kumo";
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
-import { Inbox, InboxProvider, useAttention, useInbox, useNotifications } from "@loopbackhq/inbox";
-import type { LoopbackApi } from "@loopbackhq/sdk";
+import {
+	Inbox,
+	InboxProvider,
+	useAttention,
+	useInbox,
+	useNotifications,
+} from "@loopbacktools/inbox";
+import type { LoopbackApi } from "@loopbacktools/sdk";
 import { Bell, BellSlash } from "@phosphor-icons/react";
 import { Cause, Exit } from "effect";
 import { AsyncResult } from "effect/reactivity";

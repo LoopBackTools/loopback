@@ -1,4 +1,4 @@
-import type { Problem, Reply as ReplyBody } from "@loopbackhq/protocol";
+import type { Problem, Reply as ReplyBody } from "@loopbacktools/protocol";
 import {
 	Ask,
 	AskPage,
@@ -6,7 +6,7 @@ import {
 	ServerEvent,
 	Snapshot,
 	Whoami,
-} from "@loopbackhq/protocol/schema";
+} from "@loopbacktools/protocol/schema";
 import {
 	Context,
 	Deferred,
@@ -236,7 +236,7 @@ export const make = (config: LoopbackConfig): LoopbackApi => {
 
 /** The Loopback client as an Effect service. */
 export class LoopbackClient extends Context.Service<LoopbackClient, LoopbackApi>()(
-	"@loopbackhq/sdk/LoopbackClient",
+	"@loopbacktools/sdk/LoopbackClient",
 ) {
 	static readonly layer = (config: LoopbackConfig) => Layer.succeed(LoopbackClient, make(config));
 }

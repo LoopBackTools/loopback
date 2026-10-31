@@ -1,6 +1,6 @@
 import { Empty, Loader, Tabs } from "@cloudflare/kumo";
 import { ShikiProvider } from "@cloudflare/kumo/code";
-import { awaitingHuman } from "@loopbackhq/sdk";
+import { awaitingHuman } from "@loopbacktools/sdk";
 import { CheckCircle, Tray } from "@phosphor-icons/react";
 import { type CSSProperties, type KeyboardEvent, type PointerEvent, useRef } from "react";
 import { type InboxNavigation, NavigationContext, RootContext, useInbox } from "./context.tsx";

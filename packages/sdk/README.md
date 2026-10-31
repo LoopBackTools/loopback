@@ -1,4 +1,4 @@
-# @loopbackhq/sdk
+# @loopbacktools/sdk
 
 Everything a frontend needs to read and answer what agents ask through Loopback: the REST calls,
 the live event socket with reconnects, and the inbox state kept current from it.
@@ -7,16 +7,16 @@ It comes in two forms over one implementation: a promise client for any framewor
 service.
 
 ```sh
-pnpm add @loopbackhq/sdk
+pnpm add @loopbacktools/sdk
 ```
 
-The inbox, [`@loopbackhq/inbox`](https://www.npmjs.com/package/@loopbackhq/inbox), is built only on
+The inbox, [`@loopbacktools/inbox`](https://www.npmjs.com/package/@loopbacktools/inbox), is built only on
 this SDK, so it is a full example to work from, or a set of components to use as they are.
 
 ## Promise client
 
 ```ts
-import { ApiError, createLoopbackClient } from "@loopbackhq/sdk";
+import { ApiError, createLoopbackClient } from "@loopbacktools/sdk";
 
 const loopback = createLoopbackClient({
 	baseUrl: "https://loopback.example.workers.dev",
@@ -56,7 +56,7 @@ refused before it is sent.
 disconnects after its last one leaves.
 
 ```tsx
-import type { Ask } from "@loopbackhq/sdk";
+import type { Ask } from "@loopbacktools/sdk";
 import { useSyncExternalStore } from "react";
 
 const titleOf = (ask: Ask) => {
@@ -89,7 +89,7 @@ function Inbox() {
 ## Effect
 
 ```ts
-import { LoopbackClient } from "@loopbackhq/sdk";
+import { LoopbackClient } from "@loopbacktools/sdk";
 import { Effect, Stream } from "effect";
 
 const program = Effect.gen(function* () {

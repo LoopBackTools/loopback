@@ -1,4 +1,4 @@
-import type { Ask, ToolReply, UploadTicket } from "@loopbackhq/protocol";
+import type { Ask, ToolReply, UploadTicket } from "@loopbacktools/protocol";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { describe, expect, it } from "@effect/vitest";
 import { abortAllDurableObjects, runInDurableObject } from "cloudflare:test";

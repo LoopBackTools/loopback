@@ -42,7 +42,7 @@ consistent, structured way to reply, where each point keeps its own thread.
 
 ## Constraints
 
-- **Additive only.** Separate work is building the hosted product on `@loopbackhq/server`. This
+- **Additive only.** Separate work is building the hosted product on `@loopbacktools/server`. This
   must not change the gate, `Spaces`, `Declinable`, hosting, or the shape of anything that exists,
   apart from new union members and new optional fields. Opening a
   briefing goes through the existing `open` operation, so a host that meters or declines opens
@@ -167,7 +167,7 @@ model BriefingAnswerInput { @minLength(1) askId: string; @minItems(1) answers: P
   256 KiB, the same as `answer_follow_up`. A briefing's total isn't capped.
 
 The fold from prompt plus thread to a tree of points and their states is a pure function in
-`@loopbackhq/sdk`. The server uses it to validate, and every frontend uses it to render, so the
+`@loopbacktools/sdk`. The server uses it to validate, and every frontend uses it to render, so the
 two can never disagree. (The server already depends on the protocol, so if importing the SDK
 crosses a layering rule, the fold lives in the protocol package instead. That's the builder's
 call.)

@@ -3,7 +3,7 @@
 ## Reporting a vulnerability
 
 Please report vulnerabilities privately through GitHub:
-[report a vulnerability](https://github.com/bimsonz/loopback/security/advisories/new), or
+[report a vulnerability](https://github.com/LoopBackTools/loopback/security/advisories/new), or
 **Report a vulnerability** on the repository's **Security** tab. Do not open a public issue, pull
 request or discussion about it.
 

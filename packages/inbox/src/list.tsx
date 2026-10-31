@@ -1,5 +1,5 @@
 import { Badge, Text } from "@cloudflare/kumo";
-import type { Ask, InboxState } from "@loopbackhq/sdk";
+import type { Ask, InboxState } from "@loopbacktools/sdk";
 import {
 	CaretDown,
 	CaretRight,

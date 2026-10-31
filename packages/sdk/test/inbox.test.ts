@@ -1,4 +1,4 @@
-import type { Ask, QuestionAsk } from "@loopbackhq/protocol/schema";
+import type { Ask, QuestionAsk } from "@loopbacktools/protocol/schema";
 import { describe, expect, it } from "vitest";
 import { applyEvent, awaitingHuman, initialInbox, RECENT_LIMIT } from "../src/index.ts";
 

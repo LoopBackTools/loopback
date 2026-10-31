@@ -2,7 +2,7 @@
 // Regenerate with: pnpm generate
 
 import type { z } from "zod";
-import type * as Contracts from "@loopbackhq/protocol";
+import type * as Contracts from "@loopbacktools/protocol";
 import type {
 	replySchema,
 	whoamiSchema,

@@ -1,4 +1,4 @@
-import { type Ask, type Entry, numberBriefing, type Reply } from "@loopbackhq/sdk";
+import { type Ask, type Entry, numberBriefing, type Reply } from "@loopbacktools/sdk";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";

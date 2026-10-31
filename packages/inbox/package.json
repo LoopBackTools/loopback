@@ -1,12 +1,12 @@
 {
-	"name": "@loopbackhq/inbox",
+	"name": "@loopbacktools/inbox",
 	"version": "0.3.0",
 	"description": "The Loopback inbox as React components: read and answer what agents ask, live, inside your own app.",
-	"homepage": "https://github.com/bimsonz/loopback/tree/main/packages/inbox#readme",
+	"homepage": "https://github.com/LoopBackTools/loopback/tree/main/packages/inbox#readme",
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/bimsonz/loopback.git",
+		"url": "git+https://github.com/LoopBackTools/loopback.git",
 		"directory": "packages/inbox"
 	},
 	"files": [
@@ -45,7 +45,7 @@
 	"devDependencies": {
 		"@cloudflare/kumo": "catalog:",
 		"@effect/atom-react": "catalog:",
-		"@loopbackhq/sdk": "workspace:*",
+		"@loopbacktools/sdk": "workspace:*",
 		"@testing-library/jest-dom": "catalog:",
 		"@testing-library/react": "catalog:",
 		"@testing-library/user-event": "catalog:",
@@ -62,7 +62,7 @@
 	"peerDependencies": {
 		"@cloudflare/kumo": "^2.15.0",
 		"@effect/atom-react": "^4.0.6",
-		"@loopbackhq/sdk": "workspace:^",
+		"@loopbacktools/sdk": "workspace:^",
 		"effect": "^4.0.6",
 		"react": "^19.2.0",
 		"react-dom": "^19.2.0"

@@ -1,4 +1,4 @@
-import type { Problem } from "@loopbackhq/protocol";
+import type { Problem } from "@loopbacktools/protocol";
 import { Cause, ConfigProvider, Effect, Exit, Layer, Logger, ManagedRuntime } from "effect";
 import { type WorkerBindings, WorkerEnv } from "./env.ts";
 import { Files } from "./files.ts";

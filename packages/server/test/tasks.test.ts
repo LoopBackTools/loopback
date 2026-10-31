@@ -1,4 +1,4 @@
-import type { Ask } from "@loopbackhq/protocol";
+import type { Ask } from "@loopbacktools/protocol";
 import { describe, expect, it } from "@effect/vitest";
 import { runInDurableObject } from "cloudflare:test";
 import { env, exports } from "cloudflare:workers";

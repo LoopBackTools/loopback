@@ -2,7 +2,7 @@
 
 **Status:** proposal, not built.
 
-The inbox components are already one package, `@loopbackhq/inbox`, and every deployment renders the
+The inbox components are already one package, `@loopbacktools/inbox`, and every deployment renders the
 same asks. What isn't shared is the app around them: the header, the connection status, the
 notifications toggle, routing, the page that explains how to connect an agent, and soon the reload
 when a deploy changes the contract ([versioned messages](versioned-messages.md)). Each deployment
@@ -74,11 +74,11 @@ comes into the open-source repo: the repo defines the interfaces, and the host f
 
 ## Package
 
-A new package, `@loopbackhq/app`, built on `@loopbackhq/inbox`. The inbox stays a set of components
+A new package, `@loopbacktools/app`, built on `@loopbacktools/inbox`. The inbox stays a set of components
 for a deployment that wants to put them inside an app of its own; the app is for one that wants the
 whole thing.
 
-An architecture test keeps the split honest: `@loopbackhq/app` and `@loopbackhq/inbox` import no
+An architecture test keeps the split honest: `@loopbacktools/app` and `@loopbacktools/inbox` import no
 sign-in library and nothing about accounts, only the SDK and the interfaces.
 
 ## Routing
@@ -92,7 +92,7 @@ the only workspace, so links already in agents' transcripts keep working.
 
 Alongside the versioning work, released with it in 0.4.0, the first npm release:
 
-1. `@loopbackhq/app` with the interfaces, the shell moved out of `apps/loopback`, path routing,
+1. `@loopbacktools/app` with the interfaces, the shell moved out of `apps/loopback`, path routing,
    and the old links followed. Tested with fake adapters.
 2. `apps/loopback` becomes its entry file and its token adapters.
 3. The reload signal and "can't be shown" built into the app, when versioning's steps 3 to 5 land.

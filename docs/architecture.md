@@ -62,7 +62,7 @@ through a service binding may vouch for the caller by passing `props.loopback`,
 network can forge them and no secret is shared. Props that say anything else are a misconfigured
 invoker, refused with a 500: never a reason to fall back to the gate.
 
-A host that wraps Loopback composes `@loopbackhq/server` with its own layers: its gate, and a wrapping
+A host that wraps Loopback composes `@loopbacktools/server` with its own layers: its gate, and a wrapping
 of `Spaces` that can meter what tenants open, or decline an ask or upload with a reason the agent is
 shown. The server's layering keeps that possible: the domain knows nothing else, the core (the
 `Space` object and its operations) knows only the domain, and an architecture suite fails the build
@@ -134,8 +134,8 @@ change. Browsers cannot set headers on a WebSocket, so an inbox first asks for a
 A ticket is spent on use and lapses within a minute, so the copy Cloudflare logs with the upgrade is
 of no use; the token itself never leaves the header, which Cloudflare redacts. A client that can set
 headers may instead send `Authorization` with the upgrade.
-`@loopbackhq/sdk` wraps the REST calls and the socket, reconnects with backoff, and folds events
-into an inbox state with a pure reducer. The web inbox, `@loopbackhq/inbox`, is built only on it: its
+`@loopbacktools/sdk` wraps the REST calls and the socket, reconnects with backoff, and folds events
+into an inbox state with a pure reducer. The web inbox, `@loopbacktools/inbox`, is built only on it: its
 state is kept per client, so handing it another client follows another space, and which ask is
 open is the host's to keep. `apps/loopback` serves it with a token sign-in and fragment routing.
 

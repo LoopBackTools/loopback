@@ -1,5 +1,5 @@
 import { RegistryProvider } from "@effect/atom-react";
-import { make } from "@loopbackhq/sdk";
+import { make } from "@loopbacktools/sdk";
 import { type ReactNode, useState } from "react";
 import { type InboxNavigation, InboxProvider, NavigationContext } from "../src/context.tsx";
 

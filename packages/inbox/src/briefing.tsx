@@ -10,7 +10,7 @@ import {
 	type PointTurn,
 	type ReplyBody,
 	respondedProblem,
-} from "@loopbackhq/sdk";
+} from "@loopbacktools/sdk";
 import {
 	ArrowDown,
 	CaretDown,

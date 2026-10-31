@@ -2,7 +2,7 @@
 // Regenerate with: pnpm generate
 
 import { z } from "zod";
-import { SPEC_VOCABULARIES } from "@loopbackhq/protocol";
+import { SPEC_VOCABULARIES } from "@loopbacktools/protocol";
 
 /** Wire text as the JSON value it spells that the schema accepts: a number, a boolean, or the text. */
 function wireRead(raw: unknown, schema: z.ZodType): unknown {

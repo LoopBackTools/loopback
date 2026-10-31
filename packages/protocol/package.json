@@ -1,12 +1,12 @@
 {
-	"name": "@loopbackhq/protocol",
+	"name": "@loopbacktools/protocol",
 	"version": "0.3.0",
 	"description": "The Loopback API contract: the TypeSpec definition, its generated types and the OpenAPI document.",
-	"homepage": "https://github.com/bimsonz/loopback/tree/main/packages/protocol#readme",
+	"homepage": "https://github.com/LoopBackTools/loopback/tree/main/packages/protocol#readme",
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/bimsonz/loopback.git",
+		"url": "git+https://github.com/LoopBackTools/loopback.git",
 		"directory": "packages/protocol"
 	},
 	"files": [

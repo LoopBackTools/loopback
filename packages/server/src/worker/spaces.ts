@@ -1,4 +1,4 @@
-import { REVISION } from "@loopbackhq/protocol/schema";
+import { REVISION } from "@loopbacktools/protocol/schema";
 import { env as workerEnv, exports } from "cloudflare:workers";
 import { Context, Effect, Layer, Option } from "effect";
 import type { Space } from "../space/object.ts";

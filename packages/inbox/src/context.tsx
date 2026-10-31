@@ -1,5 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import { initialInbox, type InboxState, type LoopbackApi } from "@loopbackhq/sdk";
+import { initialInbox, type InboxState, type LoopbackApi } from "@loopbacktools/sdk";
 import { AsyncResult } from "effect/reactivity";
 import {
 	type ComponentProps,

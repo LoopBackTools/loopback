@@ -1,8 +1,8 @@
 // What a frontend reads, as the SDK decodes it: each union a release can grow has an `unknown` member.
-export type * from "@loopbackhq/protocol/schema";
+export type * from "@loopbacktools/protocol/schema";
 // What a frontend sends with a reply.
-export type { Reply as ReplyBody } from "@loopbackhq/protocol";
-export type { BriefingTree, PointNode, PointState, PointTurn } from "@loopbackhq/protocol";
+export type { Reply as ReplyBody } from "@loopbacktools/protocol";
+export type { BriefingTree, PointNode, PointState, PointTurn } from "@loopbacktools/protocol";
 export {
 	answerEntries,
 	answersProblem,
@@ -13,7 +13,7 @@ export {
 	MAX_TOP_POINTS,
 	numberBriefing,
 	respondedProblem,
-} from "@loopbackhq/protocol";
+} from "@loopbacktools/protocol";
 export {
 	ApiError,
 	EVENTS_PROTOCOL,

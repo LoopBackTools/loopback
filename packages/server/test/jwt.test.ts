@@ -1,8 +1,8 @@
-import type { Snapshot } from "@loopbackhq/protocol";
+import type { Snapshot } from "@loopbacktools/protocol";
 import { afterEach, describe, expect, it, vi } from "@effect/vitest";
 import { createExecutionContext, waitOnExecutionContext } from "cloudflare:test";
 import { env, exports } from "cloudflare:workers";
-import type { Ask } from "@loopbackhq/protocol";
+import type { Ask } from "@loopbacktools/protocol";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { Effect } from "effect";
 import { exportJWK, generateKeyPair, SignJWT, UnsecuredJWT } from "jose";

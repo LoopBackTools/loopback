@@ -1,4 +1,4 @@
-import type { Ask, ServerEvent, UnknownEvent } from "@loopbackhq/protocol/schema";
+import type { Ask, ServerEvent, UnknownEvent } from "@loopbacktools/protocol/schema";
 
 /** How many closed asks the inbox keeps, matching what a snapshot carries. */
 export const RECENT_LIMIT = 50;

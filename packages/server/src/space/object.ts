@@ -1,5 +1,5 @@
 import { SqliteClient } from "@effect/sql-sqlite-do";
-import type { ServerEvent } from "@loopbackhq/protocol";
+import type { ServerEvent } from "@loopbacktools/protocol";
 import { DurableObject } from "cloudflare:workers";
 import { Effect, Exit, Layer, Logger, ManagedRuntime } from "effect";
 import { migrations } from "./migrations.ts";

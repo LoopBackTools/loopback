@@ -77,8 +77,8 @@ then sign in with `/mcp` in Claude Code.
 
 The inbox page this repository deploys signs in with a pasted credential, which suits the token
 gate. Behind a login, render the inbox in your own app with
-[`@loopbackhq/inbox`](../packages/inbox/README.md), handing it a client from
-[`@loopbackhq/sdk`](../packages/sdk/README.md) whose `token` is a function that returns a fresh JWT;
+[`@loopbacktools/inbox`](../packages/inbox/README.md), handing it a client from
+[`@loopbacktools/sdk`](../packages/sdk/README.md) whose `token` is a function that returns a fresh JWT;
 the SDK calls it for every request.
 
 ## Compose Loopback in your own Worker
@@ -87,10 +87,10 @@ A service that wraps Loopback (adding its own routes, billing or limits) imports
 composes it with its own layers. The `Space` class must be exported beside the handler:
 
 ```ts
-import { createLoopback, Declined, jwtGate, Spaces } from "@loopbackhq/server";
+import { createLoopback, Declined, jwtGate, Spaces } from "@loopbacktools/server";
 import { Effect, Layer } from "effect";
 
-export { Space } from "@loopbackhq/server";
+export { Space } from "@loopbacktools/server";
 
 // Wrap the spaces to meter what tenants open, or decline it with a reason the agent is shown.
 // `overLimit` stands for your own check against the tenant's plan.

@@ -1,5 +1,5 @@
 import { RegistryProvider } from "@effect/atom-react";
-import type { Actor, Ask, InboxState, LoopbackApi, Reply } from "@loopbackhq/sdk";
+import type { Actor, Ask, InboxState, LoopbackApi, Reply } from "@loopbacktools/sdk";
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Effect, Stream } from "effect";

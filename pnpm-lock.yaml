@@ -180,13 +180,13 @@ importers:
       '@effect/atom-react':
         specifier: 'catalog:'
         version: 4.0.6(effect@4.0.6)(react@19.3.1)(scheduler@0.28.0)
-      '@loopbackhq/inbox':
+      '@loopbacktools/inbox':
         specifier: workspace:*
         version: link:../../packages/inbox
-      '@loopbackhq/sdk':
+      '@loopbacktools/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
-      '@loopbackhq/server':
+      '@loopbacktools/server':
         specifier: workspace:*
         version: link:../../packages/server
       '@phosphor-icons/react':
@@ -263,7 +263,7 @@ importers:
       '@effect/atom-react':
         specifier: 'catalog:'
         version: 4.0.6(effect@4.0.6)(react@19.3.1)(scheduler@0.28.0)
-      '@loopbackhq/sdk':
+      '@loopbacktools/sdk':
         specifier: workspace:*
         version: link:../sdk
       '@testing-library/jest-dom':
@@ -360,7 +360,7 @@ importers:
 
   packages/sdk:
     dependencies:
-      '@loopbackhq/protocol':
+      '@loopbacktools/protocol':
         specifier: workspace:*
         version: link:../protocol
       effect:
@@ -385,7 +385,7 @@ importers:
       '@hono/zod-validator':
         specifier: 'catalog:'
         version: 0.9.1(hono@4.13.14)(zod@4.6.7)
-      '@loopbackhq/protocol':
+      '@loopbacktools/protocol':
         specifier: workspace:*
         version: link:../protocol
       '@modelcontextprotocol/server':

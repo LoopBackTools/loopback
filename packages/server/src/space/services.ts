@@ -1,4 +1,4 @@
-import type { ServerEvent } from "@loopbackhq/protocol";
+import type { ServerEvent } from "@loopbacktools/protocol";
 import { Context, Effect, FiberMap, Layer, PubSub } from "effect";
 
 /** The longest a single wait for a reply may be held inside the object. */

@@ -7,7 +7,7 @@
 <p align="center">A human-in-the-loop inbox for coding agents.</p>
 
 <p align="center">
-  <a href="https://github.com/bimsonz/loopback/actions/workflows/ci.yml"><img src="https://github.com/bimsonz/loopback/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/LoopBackTools/loopback/actions/workflows/ci.yml"><img src="https://github.com/LoopBackTools/loopback/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/licence-MIT-blue.svg" alt="Licence: MIT"></a>
 </p>
 
@@ -64,7 +64,7 @@ Loopback deploys with [`cf`](https://developers.cloudflare.com/cf/), Cloudflare'
 beta; `pnpm install` installs it for you.
 
 ```sh
-git clone https://github.com/bimsonz/loopback.git
+git clone https://github.com/LoopBackTools/loopback.git
 cd loopback
 pnpm install
 pnpm --filter loopback exec cf auth login
@@ -90,7 +90,7 @@ secrets file and deploy with `--secrets-file` again.
 Install the plugin from this repository, then give it your deployment's URL and token:
 
 ```sh
-claude plugin install loopback --marketplace bimsonz/loopback
+claude plugin install loopback --marketplace LoopBackTools/loopback
 printf '{"url":"https://<your-worker>","token":"<your-token>"}' \
   | claude plugin configure loopback@loopback --values-stdin
 ```
@@ -132,9 +132,9 @@ through a REST API and an event socket. Images go to R2.
 
 ## Build your own inbox
 
-The web inbox is published as React components, [`@loopbackhq/inbox`](packages/inbox/README.md), to
+The web inbox is published as React components, [`@loopbacktools/inbox`](packages/inbox/README.md), to
 render inside an app of your own: it reads and answers through the client you hand it, and moves
-between asks through your routes. It is built only on `@loopbackhq/sdk`, a client for the REST
+between asks through your routes. It is built only on `@loopbacktools/sdk`, a client for the REST
 calls, the live event socket and the inbox state, with a promise API for any framework and an
 Effect service, which [`packages/sdk`](packages/sdk/README.md) explains. The API is also described
 by an OpenAPI document, served at `/api/v1/openapi.json`, for clients in any language.

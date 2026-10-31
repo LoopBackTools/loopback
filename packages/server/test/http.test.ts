@@ -1,5 +1,5 @@
-import type { Ask, ServerEvent } from "@loopbackhq/protocol";
-import * as Read from "@loopbackhq/protocol/schema";
+import type { Ask, ServerEvent } from "@loopbacktools/protocol";
+import * as Read from "@loopbacktools/protocol/schema";
 import { describe, expect, it } from "@effect/vitest";
 import { runInDurableObject } from "cloudflare:test";
 import { env, exports } from "cloudflare:workers";

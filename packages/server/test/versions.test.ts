@@ -1,4 +1,4 @@
-import { REVISION } from "@loopbackhq/protocol/schema";
+import { REVISION } from "@loopbacktools/protocol/schema";
 import { describe, expect, it } from "@effect/vitest";
 import { env, exports } from "cloudflare:workers";
 import { Effect, Exit } from "effect";

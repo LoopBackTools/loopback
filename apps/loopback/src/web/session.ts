@@ -1,4 +1,4 @@
-import { make, type LoopbackApi } from "@loopbackhq/sdk";
+import { make, type LoopbackApi } from "@loopbacktools/sdk";
 import { Effect } from "effect";
 import { AsyncResult, Atom } from "effect/reactivity";
 

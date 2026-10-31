@@ -10,18 +10,18 @@
 		"mcp",
 		"model-context-protocol"
 	],
-	"homepage": "https://github.com/bimsonz/loopback#readme",
+	"homepage": "https://github.com/LoopBackTools/loopback#readme",
 	"bugs": {
-		"url": "https://github.com/bimsonz/loopback/issues"
+		"url": "https://github.com/LoopBackTools/loopback/issues"
 	},
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/bimsonz/loopback.git"
+		"url": "git+https://github.com/LoopBackTools/loopback.git"
 	},
 	"type": "module",
 	"scripts": {
-		"generate": "pnpm --filter @loopbackhq/protocol generate",
+		"generate": "pnpm --filter @loopbacktools/protocol generate",
 		"generate:check": "pnpm generate && git diff --exit-code -- packages/protocol/src/generated packages/protocol/openapi packages/server/src/generated",
 		"typecheck": "pnpm -r typecheck",
 		"lint": "oxlint --type-aware --deny-warnings --report-unused-disable-directives --ignore-pattern \"**/*.gen.ts\"",

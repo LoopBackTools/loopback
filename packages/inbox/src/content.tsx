@@ -1,7 +1,7 @@
 import { Loader, Text } from "@cloudflare/kumo";
 import { CodeHighlighted } from "@cloudflare/kumo/code";
 import { useAtomValue } from "@effect/atom-react";
-import type { Block } from "@loopbackhq/sdk";
+import type { Block } from "@loopbacktools/sdk";
 import { AsyncResult } from "effect/reactivity";
 import type { ReactNode } from "react";
 import Markdown, { type Components } from "react-markdown";

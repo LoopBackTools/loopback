@@ -1,4 +1,4 @@
-import type { Ask, ServerEvent } from "@loopbackhq/protocol/schema";
+import type { Ask, ServerEvent } from "@loopbacktools/protocol/schema";
 import { describe, expect, it } from "vitest";
 import { ApiError, createLoopbackClient, type InboxState } from "../src/index.ts";
 

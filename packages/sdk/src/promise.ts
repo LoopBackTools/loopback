@@ -1,5 +1,5 @@
-import type { Reply as ReplyBody } from "@loopbackhq/protocol";
-import type { Ask, AskPage, Snapshot, Whoami } from "@loopbackhq/protocol/schema";
+import type { Reply as ReplyBody } from "@loopbacktools/protocol";
+import type { Ask, AskPage, Snapshot, Whoami } from "@loopbacktools/protocol/schema";
 import { Cause, Effect, Exit, Fiber, Stream } from "effect";
 import { type ApiError, type LoopbackConfig, make } from "./client.ts";
 import { type InboxState, initialInbox } from "./inbox.ts";

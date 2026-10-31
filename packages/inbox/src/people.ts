@@ -1,5 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import type { Actor } from "@loopbackhq/sdk";
+import type { Actor } from "@loopbacktools/sdk";
 import { AsyncResult } from "effect/reactivity";
 import { useClient } from "./context.tsx";
 import { meAtom } from "./state.ts";

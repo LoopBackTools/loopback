@@ -15,7 +15,7 @@ import {
 	respondedProblem,
 	type ReviewInput,
 	type ReviewPrompt,
-} from "@loopbackhq/protocol";
+} from "@loopbacktools/protocol";
 import { Effect } from "effect";
 import { AskClosed, ContentInvalid, NotYourTurn, ReplyInvalid } from "./errors.ts";
 

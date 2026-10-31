@@ -5,7 +5,7 @@ import type {
 	Reply,
 	ReviewInput,
 	ServerEvent,
-} from "@loopbackhq/protocol";
+} from "@loopbacktools/protocol";
 import { describe, expect, it } from "@effect/vitest";
 import { runInDurableObject } from "cloudflare:test";
 import { exports } from "cloudflare:workers";

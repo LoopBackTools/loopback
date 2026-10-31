@@ -1,5 +1,5 @@
 import { Text } from "@cloudflare/kumo";
-import type { Block } from "@loopbackhq/sdk";
+import type { Block } from "@loopbacktools/sdk";
 import { Blocks, Prose } from "./content.tsx";
 import { age } from "./hooks.ts";
 

@@ -1,4 +1,4 @@
-import { type ApiError, initialInbox, type LoopbackApi, type ReplyBody } from "@loopbackhq/sdk";
+import { type ApiError, initialInbox, type LoopbackApi, type ReplyBody } from "@loopbacktools/sdk";
 import { Effect } from "effect";
 import { Atom } from "effect/reactivity";
 

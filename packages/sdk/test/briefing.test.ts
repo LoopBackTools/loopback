@@ -1,5 +1,5 @@
-import type { PointAnswer } from "@loopbackhq/protocol";
-import type { Entry, PointReply } from "@loopbackhq/protocol/schema";
+import type { PointAnswer } from "@loopbacktools/protocol";
+import type { Entry, PointReply } from "@loopbacktools/protocol/schema";
 import { describe, expect, it } from "vitest";
 import {
 	answerEntries,

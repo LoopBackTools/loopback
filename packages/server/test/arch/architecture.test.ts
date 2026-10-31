@@ -74,7 +74,9 @@ describe("the server's layers", () => {
 			await offenders(
 				"src/domain",
 				(specifier) =>
-					isRelative(specifier) || specifier === "effect" || specifier === "@loopbackhq/protocol",
+					isRelative(specifier) ||
+					specifier === "effect" ||
+					specifier === "@loopbacktools/protocol",
 			),
 		).toEqual([]);
 	});

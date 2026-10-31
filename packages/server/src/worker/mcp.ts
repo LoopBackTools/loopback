@@ -5,7 +5,7 @@ import {
 	foldBriefing,
 	type Responded,
 	type ToolReply,
-} from "@loopbackhq/protocol";
+} from "@loopbacktools/protocol";
 import {
 	type AuthInfo,
 	type CallToolResult,
