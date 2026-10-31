@@ -1,8 +1,11 @@
 name: release
 
-# Publishes the packages to npm when a version tag is pushed, after the same checks as CI. npm takes
-# the publish on trust from this workflow (trusted publishing over OIDC), so there is no token, and
-# each package carries provenance saying which commit and run built it.
+# Publishes the packages to npm when a version tag is pushed, after the same checks as CI. Each
+# package carries provenance saying which commit and run built it.
+#
+# npm can only trust this workflow for a package that already exists, so the first release publishes
+# with the NPM_TOKEN secret. Once each package is on npm: add this workflow as its trusted publisher
+# (trusted publishing over OIDC), remove NODE_AUTH_TOKEN below, and delete the secret and the token.
 on:
   push:
     tags: ["v*"]
@@ -21,6 +24,7 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+          registry-url: https://registry.npmjs.org
       - run: pnpm install --frozen-lockfile
       - name: The tag names the packages' version
         run: |
@@ -35,3 +39,5 @@ jobs:
       - run: pnpm test
       - run: pnpm build
       - run: pnpm -r --filter "./packages/*" publish --access public --provenance --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
