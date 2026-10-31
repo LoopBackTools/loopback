@@ -54,7 +54,13 @@ upgrades what is older ([versioned messages](docs/design/versioned-messages.md))
    `@removed`, `@renamedFrom` or `@typeChangedFrom`.
 2. Run `pnpm generate`, then `pnpm --filter @loopbackhq/protocol freeze`, which freezes the new
    revision in `packages/protocol/revisions/`.
-3. Point the protocol package's `./openapi.json` export at the new revision's document.
+3. Write `packages/protocol/revisions/<n>.examples.json`: examples of the revision's messages,
+   covering what changed. Every revision's examples must go on decoding with current code.
+4. Point the protocol package's `./openapi.json` export at the new revision's document.
+
+Readers decode with the Effect schemas `pnpm generate` writes from the spec
+(`@loopbackhq/protocol/schema`), never by casting. Each union a release can grow ends in an
+`unknown` member, so a reader meeting a message from a newer revision keeps what it can show.
 
 The protocol's tests fail when a shape changes without a new revision, or a frozen one changes.
 Changing only wording (descriptions, titles, examples) needs no revision.

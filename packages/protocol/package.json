@@ -18,6 +18,7 @@
 	"exports": {
 		".": "./src/index.ts",
 		"./document": "./src/generated/document.gen.ts",
+		"./schema": "./src/schema.ts",
 		"./openapi.json": "./openapi/openapi.1.json"
 	},
 	"publishConfig": {
@@ -30,18 +31,23 @@
 				"types": "./dist/src/generated/document.gen.d.ts",
 				"default": "./dist/src/generated/document.gen.js"
 			},
+			"./schema": {
+				"types": "./dist/src/schema.d.ts",
+				"default": "./dist/src/schema.js"
+			},
 			"./openapi.json": "./openapi/openapi.1.json"
 		},
 		"access": "public"
 	},
 	"scripts": {
-		"generate": "tsp compile spec/main.tsp --config tspconfig.yaml",
+		"generate": "tsp compile spec/main.tsp --config tspconfig.yaml && node scripts/schemas.ts",
 		"freeze": "node scripts/freeze.ts",
 		"typecheck": "tsc --noEmit",
 		"test": "vitest run",
 		"build": "tsc -p tsconfig.build.json"
 	},
 	"devDependencies": {
+		"@effect/openapi-generator": "catalog:",
 		"@hono/zod-validator": "catalog:",
 		"@types/node": "catalog:",
 		"@typespec/compiler": "catalog:",
@@ -57,5 +63,8 @@
 		"typespec-openapi-document": "catalog:",
 		"vitest": "catalog:",
 		"zod": "catalog:"
+	},
+	"peerDependencies": {
+		"effect": "^4.0.6"
 	}
 }

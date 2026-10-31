@@ -1,0 +1,182 @@
+{
+	"Ask": [
+		{
+			"kind": "question",
+			"id": "ask_q1",
+			"status": "awaiting_human",
+			"waiting": true,
+			"project": "loopback",
+			"client": "claude-code",
+			"raisedBy": { "id": "user_1", "name": "Ada" },
+			"prompt": {
+				"question": "Which database should the cache use?",
+				"options": [
+					{ "label": "KV", "description": "Eventually consistent, cheap reads." },
+					{ "label": "D1" }
+				],
+				"multiple": false,
+				"context": "Reads outnumber writes a hundred to one."
+			},
+			"thread": [
+				{ "author": "human", "reply": { "outcome": "follow_up", "question": "How big is it?" }, "by": { "id": "user_2", "name": "Bea" }, "at": "2026-10-30T09:01:00.000Z" },
+				{ "author": "agent", "answer": "About 2 GB.", "at": "2026-10-30T09:02:00.000Z" }
+			],
+			"createdAt": "2026-10-30T09:00:00.000Z",
+			"updatedAt": "2026-10-30T09:02:00.000Z"
+		},
+		{
+			"kind": "question",
+			"id": "ask_q2",
+			"status": "closed",
+			"waiting": false,
+			"prompt": { "question": "Ship it?", "options": [{ "label": "Yes" }, { "label": "No" }], "multiple": true },
+			"thread": [
+				{ "author": "human", "reply": { "outcome": "answered", "selected": ["Yes"], "text": "After lunch." }, "at": "2026-10-30T10:01:00.000Z" }
+			],
+			"createdAt": "2026-10-30T10:00:00.000Z",
+			"updatedAt": "2026-10-30T10:01:00.000Z",
+			"closedAt": "2026-10-30T10:01:00.000Z"
+		},
+		{
+			"kind": "review",
+			"id": "ask_r1",
+			"status": "closed",
+			"waiting": false,
+			"revises": "ask_r0",
+			"prompt": {
+				"title": "The new landing page",
+				"summary": "Copy and layout.",
+				"content": [
+					{ "type": "markdown", "text": "# Landing\n\nRead the hero copy." },
+					{ "type": "code", "code": "export const x = 1;", "language": "ts", "filename": "x.ts" },
+					{ "type": "diff", "diff": "-old\n+new", "filename": "page.tsx" },
+					{ "type": "image", "uploadId": "up_1", "caption": "Above the fold" }
+				]
+			},
+			"thread": [
+				{ "author": "human", "reply": { "outcome": "changes_requested", "feedback": "Shorter headline." }, "at": "2026-10-30T11:01:00.000Z" },
+				{ "author": "agent", "answer": "Shortened.", "content": [{ "type": "markdown", "text": "Now six words." }], "at": "2026-10-30T11:02:00.000Z" },
+				{ "author": "human", "reply": { "outcome": "approved", "note": "Ship it." }, "at": "2026-10-30T11:03:00.000Z" }
+			],
+			"createdAt": "2026-10-30T11:00:00.000Z",
+			"updatedAt": "2026-10-30T11:03:00.000Z",
+			"closedAt": "2026-10-30T11:03:00.000Z"
+		},
+		{
+			"kind": "review",
+			"id": "ask_r2",
+			"status": "closed",
+			"waiting": false,
+			"prompt": { "title": "A plan", "content": [{ "type": "markdown", "text": "Step one." }] },
+			"thread": [{ "author": "human", "reply": { "outcome": "dismissed" }, "at": "2026-10-30T12:01:00.000Z" }],
+			"createdAt": "2026-10-30T12:00:00.000Z",
+			"updatedAt": "2026-10-30T12:01:00.000Z",
+			"closedAt": "2026-10-30T12:01:00.000Z"
+		},
+		{
+			"kind": "briefing",
+			"id": "ask_b1",
+			"status": "awaiting_agent",
+			"waiting": true,
+			"prompt": {
+				"title": "How the deploy works",
+				"summary": "Three parts.",
+				"sections": [
+					{
+						"title": "Build",
+						"points": [
+							{ "id": "1", "title": "Vite builds the app", "detail": "Into dist.", "content": [{ "type": "code", "code": "vite build" }] },
+							{ "id": "2", "title": "Wrangler uploads it" }
+						]
+					},
+					{ "points": [{ "id": "3", "title": "Spaces update within five minutes" }] }
+				]
+			},
+			"thread": [
+				{
+					"author": "human",
+					"reply": { "outcome": "responded", "points": [{ "point": "1", "resolved": true }, { "point": "3", "text": "Why five?" }] },
+					"at": "2026-10-30T13:01:00.000Z"
+				},
+				{
+					"author": "agent",
+					"answer": "That is Cloudflare's default delay.",
+					"point": "3",
+					"points": [{ "id": "3.1", "title": "It can be configured" }],
+					"at": "2026-10-30T13:02:00.000Z"
+				}
+			],
+			"createdAt": "2026-10-30T13:00:00.000Z",
+			"updatedAt": "2026-10-30T13:02:00.000Z"
+		}
+	],
+	"ServerEvent": [
+		{
+			"type": "snapshot",
+			"snapshot": {
+				"open": [
+					{
+						"kind": "question",
+						"id": "ask_q3",
+						"status": "awaiting_human",
+						"waiting": false,
+						"prompt": { "question": "Now?", "options": [], "multiple": false },
+						"thread": [],
+						"createdAt": "2026-10-30T14:00:00.000Z",
+						"updatedAt": "2026-10-30T14:00:00.000Z"
+					}
+				],
+				"recent": []
+			}
+		},
+		{
+			"type": "ask.opened",
+			"ask": {
+				"kind": "review",
+				"id": "ask_r3",
+				"status": "awaiting_human",
+				"waiting": true,
+				"prompt": { "title": "Copy", "content": [{ "type": "markdown", "text": "Hello." }] },
+				"thread": [],
+				"createdAt": "2026-10-30T15:00:00.000Z",
+				"updatedAt": "2026-10-30T15:00:00.000Z"
+			}
+		},
+		{
+			"type": "ask.updated",
+			"ask": {
+				"kind": "review",
+				"id": "ask_r3",
+				"status": "closed",
+				"waiting": false,
+				"prompt": { "title": "Copy", "content": [{ "type": "markdown", "text": "Hello." }] },
+				"thread": [{ "author": "human", "reply": { "outcome": "approved" }, "at": "2026-10-30T15:01:00.000Z" }],
+				"createdAt": "2026-10-30T15:00:00.000Z",
+				"updatedAt": "2026-10-30T15:01:00.000Z",
+				"closedAt": "2026-10-30T15:01:00.000Z"
+			}
+		}
+	],
+	"AskPage": [
+		{
+			"items": [
+				{
+					"kind": "review",
+					"id": "ask_r4",
+					"status": "closed",
+					"waiting": false,
+					"prompt": { "title": "Old", "content": [{ "type": "markdown", "text": "Done." }] },
+					"thread": [],
+					"createdAt": "2026-10-29T15:00:00.000Z",
+					"updatedAt": "2026-10-29T15:01:00.000Z",
+					"closedAt": "2026-10-29T15:01:00.000Z"
+				}
+			],
+			"nextBefore": "2026-10-29T15:01:00.000Z"
+		},
+		{ "items": [] }
+	],
+	"Whoami": [{ "space": "default", "actor": { "id": "user_1", "name": "Ada" } }, { "space": "acme", "actor": { "id": "user_2" } }],
+	"EventTicket": [{ "ticket": "tkt_1", "expiresAt": "2026-10-30T16:01:00.000Z" }],
+	"UploadReceipt": [{ "uploadId": "up_1", "contentType": "image/png", "size": 1024 }]
+}

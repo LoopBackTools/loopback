@@ -2,6 +2,11 @@ packages:
   - packages/*
   - apps/*
 
+# The OpenAPI generator's Node platform would otherwise resolve releases built for a newer Effect.
+overrides:
+  "@effect/platform-node": 4.0.6
+  "@effect/platform-node-shared": 4.0.6
+
 allowBuilds:
   esbuild: true
   sharp: true
@@ -31,6 +36,7 @@ catalog:
   "@typespec/versioning": 0.87.0
   typespec-hono: 0.31.1
   typespec-openapi-document: 0.6.1
+  "@effect/openapi-generator": 4.0.6
 
   # runtime
   effect: 4.0.6
