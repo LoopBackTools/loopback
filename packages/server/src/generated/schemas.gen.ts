@@ -265,6 +265,9 @@ export const uploadReceiptSchema = z.strictObject({
 }).describe("A stored upload.");
 export type UploadReceipt = z.infer<typeof uploadReceiptSchema>;
 
+export const revisionsSchema = z.enum(SPEC_VOCABULARIES.Revisions).describe("The contract's revisions, oldest first. Change the shape of any message and declare it here as a\nnew revision, marking what changed with `@added`, `@removed`, `@renamedFrom` or `@typeChangedFrom`:\nevery part of a deployment names the revision it writes, and newer code upgrades older messages.\nNever edit a revision that has shipped; `revisions/` holds each one frozen, and a test fails when\nthe contract no longer emits it unchanged. See docs/design/versioned-messages.md.");
+export type Revisions = z.infer<typeof revisionsSchema>;
+
 export const askKindSchema = z.enum(SPEC_VOCABULARIES.AskKind).describe("What an agent is asking for: an answer to a question, a verdict on something it produced, or the\nperson's word on each point of something it explained.");
 export type AskKind = z.infer<typeof askKindSchema>;
 

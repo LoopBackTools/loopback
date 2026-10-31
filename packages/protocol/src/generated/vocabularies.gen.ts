@@ -10,4 +10,5 @@
 export const SPEC_VOCABULARIES = {
 	AskKind: ["question", "review", "briefing"],
 	AskStatus: ["awaiting_human", "awaiting_agent", "closed"],
+	Revisions: ["1"],
 } as const;

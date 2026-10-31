@@ -1,7 +1,9 @@
 import "@typespec/http";
 import "@typespec/openapi";
+import "@typespec/versioning";
 
 using Http;
+using Versioning;
 
 // The Loopback contract. Everything the HTTP API accepts or returns, the shapes MCP tools take and
 // give back, and the frames the event socket sends are declared here, and only here.
@@ -12,9 +14,21 @@ using Http;
  * An agent asks over MCP; a person answers through this API, usually from the web inbox. Live updates
  * arrive over the WebSocket at `/api/v1/events`, which sends a `SnapshotEvent` and then `AskEvent`s.
  */
+@versioned(Revisions)
 @service(#{ title: "Loopback" })
 @server("/api/v1", "Loopback API")
 namespace Loopback;
+
+/**
+ * The contract's revisions, oldest first. Change the shape of any message and declare it here as a
+ * new revision, marking what changed with `@added`, `@removed`, `@renamedFrom` or `@typeChangedFrom`:
+ * every part of a deployment names the revision it writes, and newer code upgrades older messages.
+ * Never edit a revision that has shipped; `revisions/` holds each one frozen, and a test fails when
+ * the contract no longer emits it unchanged. See docs/design/versioned-messages.md.
+ */
+enum Revisions {
+	r1: "1",
+}
 
 // --- vocabulary -----------------------------------------------------------------------------------
 

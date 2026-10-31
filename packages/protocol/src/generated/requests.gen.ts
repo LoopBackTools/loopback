@@ -251,6 +251,8 @@ export interface UploadReceipt {
 	size: number;
 }
 
+export type Revisions = "1";
+
 export type AskKind = "question" | "review" | "briefing";
 
 export interface BriefingPoint {

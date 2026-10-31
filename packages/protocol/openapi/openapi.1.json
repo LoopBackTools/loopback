@@ -3,7 +3,7 @@
   "info": {
     "title": "Loopback",
     "description": "Loopback puts what an agent needs from a person in front of them and hands the reply back.\n\nAn agent asks over MCP; a person answers through this API, usually from the web inbox. Live updates\narrive over the WebSocket at `/api/v1/events`, which sends a `SnapshotEvent` and then `AskEvent`s.",
-    "version": "0.0.0"
+    "version": "1"
   },
   "tags": [],
   "paths": {
@@ -1707,6 +1707,13 @@
           "not": {}
         },
         "description": "A review as it is shown to the person."
+      },
+      "Revisions": {
+        "type": "string",
+        "enum": [
+          "1"
+        ],
+        "description": "The contract's revisions, oldest first. Change the shape of any message and declare it here as a\nnew revision, marking what changed with `@added`, `@removed`, `@renamedFrom` or `@typeChangedFrom`:\nevery part of a deployment names the revision it writes, and newer code upgrades older messages.\nNever edit a revision that has shipped; `revisions/` holds each one frozen, and a test fails when\nthe contract no longer emits it unchanged. See docs/design/versioned-messages.md."
       },
       "ServerEvent": {
         "anyOf": [

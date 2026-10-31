@@ -7,10 +7,24 @@
  * Imported rather than read from disk, so it is part of your bundle: it cannot go stale relative to
  * the build, and a missing document fails the build rather than a request.
  */
-import document0 from "../../openapi/openapi.json" with { type: "json" };
+import document0 from "../../openapi/openapi.1.json" with { type: "json" };
 
 /** The document for the version this service currently serves. */
 export const openApiDocument = document0;
+
+/**
+ * Every version this service declares, keyed by version name.
+ *
+ * **`openApiDocument` is the LAST DECLARED version, not the last alphabetically.** A version name
+ * sorts however its author spelled it (`v1, v2preview, v2` sorts as `v1, v2, v2preview`) so only
+ * the declaration order says which one is current.
+ */
+export const openApiDocumentsByVersion = {
+	"1": document0,
+} as const;
+
+/** The versions this service declares, oldest first. */
+export const OPENAPI_VERSIONS = ["1"] as const;
 
 /** The path this document is conventionally served at. Yours to change; nothing here depends on it. */
 export const OPENAPI_DOCUMENT_PATH = "/openapi.json";

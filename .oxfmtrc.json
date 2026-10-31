@@ -8,6 +8,7 @@
 		".cloudflare",
 		"packages/*/dist",
 		"**/*.gen.ts",
-		"**/openapi/openapi.json"
+		"**/openapi/openapi.*.json",
+		"packages/protocol/revisions"
 	]
 }

@@ -44,7 +44,20 @@ local Durable Object and R2 bucket. The SDK's and the inbox's run in Node.
 
 Every shape Loopback speaks is defined once, in `packages/protocol/spec/main.tsp`. To change one,
 edit the definition, run `pnpm generate`, and commit the generated files with your change. Never
-edit a `*.gen.ts` file or `openapi.json` by hand: `pnpm generate:check` fails when they drift.
+edit a `*.gen.ts` file or an OpenAPI document by hand: `pnpm generate:check` fails when they drift.
+
+A change to a message's shape is a new revision of the contract. Parts of a deployment run
+different code for a while after every deploy, so each names the revision it writes, and newer code
+upgrades what is older ([versioned messages](docs/design/versioned-messages.md)). To make one:
+
+1. Add the revision to the `Revisions` enum in the spec, and mark what changed with `@added`,
+   `@removed`, `@renamedFrom` or `@typeChangedFrom`.
+2. Run `pnpm generate`, then `pnpm --filter @loopbackhq/protocol freeze`, which freezes the new
+   revision in `packages/protocol/revisions/`.
+3. Point the protocol package's `./openapi.json` export at the new revision's document.
+
+The protocol's tests fail when a shape changes without a new revision, or a frozen one changes.
+Changing only wording (descriptions, titles, examples) needs no revision.
 
 ## Code
 
