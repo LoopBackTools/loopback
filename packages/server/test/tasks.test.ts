@@ -5,10 +5,11 @@ import { env, exports } from "cloudflare:workers";
 import { Effect } from "effect";
 import { DEFAULT_SPACE } from "../src/index.ts";
 import { spaceClient } from "../src/space/rpc.ts";
+import { caller } from "./caller.ts";
 
 const ORIGIN = "https://loopback.test";
 const TASKS = "io.modelcontextprotocol/tasks";
-const space = spaceClient(() => exports.Space.get(exports.Space.idFromName(DEFAULT_SPACE)));
+const space = spaceClient(() => exports.Space.get(exports.Space.idFromName(DEFAULT_SPACE)), caller);
 
 interface Message {
 	readonly id?: number;

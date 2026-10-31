@@ -1,7 +1,8 @@
-import { exports } from "cloudflare:workers";
+import { REVISION } from "@loopbackhq/protocol/schema";
+import { env as workerEnv, exports } from "cloudflare:workers";
 import { Context, Effect, Layer, Option } from "effect";
 import type { Space } from "../space/object.ts";
-import { type SpaceClient, spaceClient } from "../space/rpc.ts";
+import { BUILD_HEADER, buildOf, type Caller, type SpaceClient, spaceClient } from "../space/rpc.ts";
 import type { WorkerBindings } from "./env.ts";
 import { filesOf } from "./files.ts";
 import type { Access } from "./gate.ts";
@@ -29,26 +30,29 @@ export class Spaces extends Context.Service<
 	static readonly layer = Layer.sync(Spaces, () => {
 		const spaces = namespace();
 		const stubOf = (access: Access) => spaces.getByName(access.space);
+		// This code's version, which every call names, so a space still on older code knows to restart.
+		const caller: Caller = { revision: REVISION, build: buildOf(workerEnv) };
 		return Spaces.of({
-			of: (access) => spaceClient(() => stubOf(access)),
+			of: (access) => spaceClient(() => stubOf(access), caller),
 			idOf: (access) => spaces.idFromName(access.space).toString(),
 			byId: (spaceId) => {
 				if (!/^[0-9a-f]{64}$/.test(spaceId)) return Option.none();
 				try {
 					const id = spaces.idFromString(spaceId);
-					return Option.some(spaceClient(() => spaces.get(id)));
+					return Option.some(spaceClient(() => spaces.get(id), caller));
 				} catch {
 					// A well-formed id this namespace did not mint.
 					return Option.none();
 				}
 			},
 			connect: (space, request) =>
-				Effect.promise(() =>
-					(typeof space === "string"
-						? spaces.get(spaces.idFromString(space))
-						: stubOf(space)
-					).fetch(request),
-				),
+				Effect.promise(() => {
+					const named = new Request(request);
+					if (caller.build !== undefined) named.headers.set(BUILD_HEADER, caller.build);
+					return (
+						typeof space === "string" ? spaces.get(spaces.idFromString(space)) : stubOf(space)
+					).fetch(named);
+				}),
 		});
 	});
 }

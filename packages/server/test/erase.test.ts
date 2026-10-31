@@ -4,10 +4,11 @@ import { Effect } from "effect";
 import { eraseSpace } from "../src/index.ts";
 import { spaceClient } from "../src/space/rpc.ts";
 import { fileKey } from "../src/worker/files.ts";
+import { caller } from "./caller.ts";
 
 const OWNER = { id: "owner" };
 
-const clientOf = (space: string) => spaceClient(() => exports.Space.getByName(space));
+const clientOf = (space: string) => spaceClient(() => exports.Space.getByName(space), caller);
 
 const ask = (space: string, question: string) =>
 	Effect.runPromise(

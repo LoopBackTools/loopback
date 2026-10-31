@@ -13,6 +13,37 @@ import {
 } from "../domain/errors.ts";
 import { type Operations, operations } from "./operations.ts";
 
+/**
+ * The version of the code making a call: the contract revision it writes, and the deploy it is part
+ * of. A space compares them with its own, since for a while after a deploy the Worker and a space can
+ * run different code. `build` is the version's creation time, from Cloudflare's version metadata, and
+ * absent where there is none (local tests): then nothing is compared.
+ */
+export interface Caller {
+	readonly revision: number;
+	readonly build?: string | undefined;
+}
+
+/** A deployment's build, from its version metadata binding, if it has one. */
+export const buildOf = (env: unknown): string | undefined => {
+	const metadata = (env as { readonly CF_VERSION_METADATA?: { readonly timestamp?: unknown } })
+		.CF_VERSION_METADATA;
+	return typeof metadata?.timestamp === "string" ? metadata.timestamp : undefined;
+};
+
+/** The header the Worker names its build in when it hands a space an inbox's WebSocket. */
+export const BUILD_HEADER = "Loopback-Build";
+
+/** Whether a build is from a later deploy than another; unknown when either is. */
+export const isLater = (build: string | undefined, than: string | undefined): boolean =>
+	build !== undefined && than !== undefined && Date.parse(build) > Date.parse(than);
+
+/**
+ * A space's refusal of a call from newer code than its own: it ran nothing, and restarts onto the new
+ * code a moment later. The client tries the call again, whatever it is, and never hands this on.
+ */
+export class Outdated extends Schema.TaggedError<Outdated>()("Outdated", {}) {}
+
 /** Every error a space operation fails with. */
 export const SpaceFailure = Schema.Union([
 	AskNotFound,
@@ -34,16 +65,20 @@ export type SpaceFailure = typeof SpaceFailure.Type;
  */
 export type ExitJson = Schema.Json;
 
+/** What a call can fail with across the boundary: an operation's errors, or the space's refusal. */
+const CallFailure = Schema.Union([...SpaceFailure.members, Outdated]);
+type CallFailure = typeof CallFailure.Type;
+
 // A defect keeps its stack across the hop, so it is logged where it happened: this codec only ever
 // runs between the Worker and its own Durable Object, never towards a client.
-let codec: Schema.Codec<Exit.Exit<Schema.Json, SpaceFailure>, Schema.Json> | undefined;
+let codec: Schema.Codec<Exit.Exit<Schema.Json, CallFailure>, Schema.Json> | undefined;
 const exitCodec = () =>
 	(codec ??= Schema.toCodecJson(
-		Schema.Exit(Schema.Json, SpaceFailure, Schema.Defect({ includeStack: true })),
+		Schema.Exit(Schema.Json, CallFailure, Schema.Defect({ includeStack: true })),
 	));
 
-export const encodeExit = (exit: Exit.Exit<unknown, SpaceFailure>): ExitJson =>
-	Schema.encodeSync(exitCodec())(exit as Exit.Exit<Schema.Json, SpaceFailure>);
+export const encodeExit = (exit: Exit.Exit<unknown, CallFailure>): ExitJson =>
+	Schema.encodeSync(exitCodec())(exit as Exit.Exit<Schema.Json, CallFailure>);
 
 const decodeExit = (json: unknown) => Schema.decodeUnknownSync(exitCodec())(json);
 
@@ -52,7 +87,7 @@ export type OperationName = keyof Operations;
 
 /** What the Worker holds to reach a space: its object's single RPC entry point. */
 export interface SpaceStub {
-	call(method: OperationName, args: readonly unknown[]): Promise<ExitJson>;
+	call(method: OperationName, args: readonly unknown[], caller: Caller): Promise<ExitJson>;
 }
 
 /** The operations a deployment may decline, wrapping the client: the ones that open something new. */
@@ -107,24 +142,44 @@ const RETRY = {
 };
 
 /**
- * The typed client for one space. Each call is decoded back into the operation's own success value
- * or tagged error. A call the object refused is tried again on a fresh stub when it is safe to, as
- * Cloudflare advises; otherwise it is a defect.
+ * A space restarting onto new code takes a moment, and refuses as `Outdated` until it has; the
+ * retries outlast that.
  */
-export const spaceClient = (stub: () => SpaceStub): SpaceClient =>
+const OUTDATED_RETRY = {
+	schedule: Schedule.exponential("50 millis").pipe(Schedule.jittered),
+	times: 6,
+	while: (failure: unknown) => failure instanceof Outdated,
+};
+
+/**
+ * The typed client for one space, for code of the version `caller` names. Each call is decoded back
+ * into the operation's own success value or tagged error. A call the object refused is tried again on
+ * a fresh stub when it is safe to, as Cloudflare advises; otherwise it is a defect. A call a space
+ * refused as `Outdated` ran nothing, so it is tried again whatever it is, until the space is on the
+ * new code.
+ */
+export const spaceClient = (stub: () => SpaceStub, caller: Caller): SpaceClient =>
 	Object.fromEntries(
 		(Object.keys(operations) as OperationName[]).map((method) => {
 			const once = (args: readonly unknown[]) =>
 				Effect.tryPromise({
-					try: () => stub().call(method, args),
+					try: () => stub().call(method, args, caller),
 					catch: (cause) => new Refused({ cause }),
 				});
+			const attempt = (args: readonly unknown[]) =>
+				(idempotent.has(method) ? Effect.retry(once(args), RETRY) : once(args)).pipe(
+					Effect.catchTag("Refused", (refused) => Effect.die(refused.cause)),
+					Effect.flatMap((json) => decodeExit(json)),
+				);
 			return [
 				method,
 				(...args: unknown[]) =>
-					(idempotent.has(method) ? Effect.retry(once(args), RETRY) : once(args)).pipe(
-						Effect.catchTag("Refused", (refused) => Effect.die(refused.cause)),
-						Effect.flatMap((json) => decodeExit(json)),
+					attempt(args).pipe(
+						Effect.retry(OUTDATED_RETRY),
+						Effect.catchIf(
+							(failure) => failure instanceof Outdated,
+							() => Effect.die(new Error("The space did not move onto this code in time.")),
+						),
 					),
 			];
 		}),

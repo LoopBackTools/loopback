@@ -12,6 +12,8 @@ export default defineConfig({
 		compatibilityFlags: ["nodejs_compat", "enable_request_signal"],
 		env: {
 			FILES: bindings.r2({ name }),
+			// Which deploy the code is from, which a space compares with its caller's.
+			CF_VERSION_METADATA: bindings.versionMetadata(),
 			LOOPBACK_TOKEN: bindings.text("test-token-0123456789abcdef0123456789"),
 			// The Worker invoked with props, as another Worker vouching for its caller invokes it.
 			VOUCHED: bindings.worker({

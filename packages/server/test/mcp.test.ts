@@ -7,10 +7,11 @@ import { Effect } from "effect";
 import packageJson from "../package.json" with { type: "json" };
 import { DEFAULT_SPACE } from "../src/index.ts";
 import { spaceClient } from "../src/space/rpc.ts";
+import { caller } from "./caller.ts";
 
 const ORIGIN = "https://loopback.test";
 const stub = () => exports.Space.get(exports.Space.idFromName(DEFAULT_SPACE));
-const space = spaceClient(stub);
+const space = spaceClient(stub, caller);
 
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 

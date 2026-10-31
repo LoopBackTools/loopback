@@ -16,6 +16,7 @@ The JWT gate is chosen by its settings. None of them is a secret, so declare the
 ```ts
 env: {
 	FILES: bindings.r2(),
+	CF_VERSION_METADATA: bindings.versionMetadata(),
 	LOOPBACK_JWKS_URL: bindings.text("https://login.example.com/.well-known/jwks.json"),
 	LOOPBACK_JWT_ISSUER: bindings.text("https://login.example.com"),
 	LOOPBACK_JWT_AUDIENCE: bindings.text("https://loopback.example.com/mcp"),
@@ -33,6 +34,12 @@ env: {
 
 Set either `LOOPBACK_TOKEN` or the JWT settings, never both: a deployment with both, or neither,
 answers every request with a 500 that says which to set.
+
+Keep `CF_VERSION_METADATA` in every deployment, under that name (with Wrangler,
+`"version_metadata": { "binding": "CF_VERSION_METADATA" }`). For a while after a deploy, a space can
+go on running the code it started with while the new Worker calls it; with the deploy's version to
+compare, such a space refuses the call and restarts onto the new code, and the Worker tries it again
+([versioned messages](design/versioned-messages.md)).
 
 ## What a token must carry
 

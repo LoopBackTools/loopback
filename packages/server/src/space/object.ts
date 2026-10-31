@@ -1,15 +1,28 @@
 import { SqliteClient } from "@effect/sql-sqlite-do";
 import type { ServerEvent } from "@loopbackhq/protocol";
 import { DurableObject } from "cloudflare:workers";
-import { Effect, Layer, Logger, ManagedRuntime } from "effect";
+import { Effect, Exit, Layer, Logger, ManagedRuntime } from "effect";
 import { migrations } from "./migrations.ts";
 import { operations, snapshot } from "./operations.ts";
-import { encodeExit, type ExitJson, type OperationName, type SpaceFailure } from "./rpc.ts";
+import {
+	BUILD_HEADER,
+	buildOf,
+	type Caller,
+	encodeExit,
+	type ExitJson,
+	isLater,
+	type OperationName,
+	Outdated,
+	type SpaceFailure,
+} from "./rpc.ts";
 import { Host, Presence, Replies } from "./services.ts";
 import { AskStore, TicketStore, UploadStore } from "./store.ts";
 
 /** The subprotocol an inbox speaks on the event socket. */
 export const EVENTS_PROTOCOL = "loopback.v1";
+
+/** How long a space that has refused newer code waits before restarting: long enough to answer. */
+const RESTART_DELAY_MS = 100;
 
 type SpaceServices = AskStore | UploadStore | TicketStore | Host | Replies | Presence;
 
@@ -19,9 +32,14 @@ type SpaceServices = AskStore | UploadStore | TicketStore | Host | Replies | Pre
  */
 export class Space extends DurableObject {
 	#runtime: ManagedRuntime.ManagedRuntime<SpaceServices, never>;
+	/** The deploy this object's code is from. */
+	readonly #ownBuild: string | undefined;
+	/** Set once newer code has called: from then on everything is refused until the restart. */
+	#restarting = false;
 
 	constructor(ctx: DurableObjectState, env: unknown) {
 		super(ctx, env as never);
+		this.#ownBuild = buildOf(env);
 		ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair("ping", "pong"));
 		this.#runtime = this.#build();
 		// Build the runtime, migrations included, before the object takes any request.
@@ -69,8 +87,28 @@ export class Space extends DurableObject {
 		});
 	}
 
+	/**
+	 * For a while after a deploy, an active space can go on running the code it started with while a
+	 * newer Worker calls it. Called by newer code, it refuses, running nothing, and restarts onto that
+	 * code a moment later, once the refusal is on its way; whatever reaches it until then is refused
+	 * the same way. A caller retries what was refused. Older code calling a newer space carries on.
+	 */
+	#outdatedFor(build: string | undefined): boolean {
+		if (!this.#restarting && !isLater(build, this.#ownBuild)) return false;
+		if (!this.#restarting) {
+			this.#restarting = true;
+			setTimeout(
+				() => this.ctx.abort("Newer code called this space: restarting onto it."),
+				RESTART_DELAY_MS,
+			);
+		}
+		return true;
+	}
+
 	/** Runs one space operation and answers with its Exit, encoded for the trip back. */
-	async call(method: OperationName, args: readonly unknown[]): Promise<ExitJson> {
+	async call(method: OperationName, args: readonly unknown[], caller?: Caller): Promise<ExitJson> {
+		// Code from before callers named their version passes nothing: it is older, so carry on.
+		if (this.#outdatedFor(caller?.build)) return encodeExit(Exit.fail(new Outdated()));
 		if (!Object.hasOwn(operations, method)) {
 			return encodeExit(
 				await Effect.runPromiseExit(Effect.die(new Error(`No operation ${method}`))),
@@ -86,6 +124,13 @@ export class Space extends DurableObject {
 	override async fetch(request: Request): Promise<Response> {
 		if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
 			return new Response("Expected a WebSocket upgrade.", { status: 426 });
+		}
+		// The inbox reconnects, by then to the space on the new code.
+		if (this.#outdatedFor(request.headers.get(BUILD_HEADER) ?? undefined)) {
+			return new Response("This space is restarting onto newer code.", {
+				status: 503,
+				headers: { "Retry-After": "1" },
+			});
 		}
 		// Read the space first: a socket is only accepted once there is something to send it.
 		const current = await this.#runtime.runPromise(snapshot);

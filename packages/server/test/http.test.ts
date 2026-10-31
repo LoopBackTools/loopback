@@ -10,11 +10,12 @@ import { UploadIncomplete } from "../src/domain/errors.ts";
 import { REPAIR_CONTENTLESS_REVIEWS } from "../src/space/migrations.ts";
 import { spaceClient } from "../src/space/rpc.ts";
 import { Files } from "../src/worker/files.ts";
+import { caller } from "./caller.ts";
 
 const TOKEN = env.LOOPBACK_TOKEN;
 const OWNER = { id: "owner" };
 const BASE = "https://loopback.test/api/v1";
-const space = spaceClient(() => exports.Space.get(exports.Space.idFromName(DEFAULT_SPACE)));
+const space = spaceClient(() => exports.Space.get(exports.Space.idFromName(DEFAULT_SPACE)), caller);
 const spaceId = exports.Space.idFromName(DEFAULT_SPACE).toString();
 
 const api = (path: string, init: RequestInit & { token?: string | null } = {}) => {

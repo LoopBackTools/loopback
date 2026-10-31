@@ -3,6 +3,11 @@ import { Context } from "effect";
 /** The bindings a Loopback Worker must declare, under these names. */
 export interface LoopbackBindings {
 	readonly FILES: R2Bucket;
+	/**
+	 * Which deploy the code is from. A space still running older code than the Worker calling it
+	 * restarts onto the newer; without it, nothing is compared. Declare it in every deployment.
+	 */
+	readonly CF_VERSION_METADATA?: WorkerVersionMetadata;
 }
 
 /**

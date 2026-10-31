@@ -8,6 +8,7 @@ import { Effect } from "effect";
 import { exportJWK, generateKeyPair, SignJWT, UnsecuredJWT } from "jose";
 import { ConfiguredGate, createLoopback, jwtGate, type JwtGateOptions } from "../src/index.ts";
 import { spaceClient } from "../src/space/rpc.ts";
+import { caller } from "./caller.ts";
 
 const ORIGIN = "https://loopback.test";
 const BASE = `${ORIGIN}/api/v1`;
@@ -80,7 +81,7 @@ const call = async (
 
 const ask = (space: string, text: string) =>
 	Effect.runPromise(
-		spaceClient(() => exports.Space.getByName(space)).open({
+		spaceClient(() => exports.Space.getByName(space), caller).open({
 			actor: OWNER,
 			kind: "question",
 			input: { question: text, options: [{ label: "Yes" }, { label: "No" }], project: "jwt-test" },
@@ -184,7 +185,7 @@ describe("a JWT-gated deployment", () => {
 		expect(snapshot.open.map((item) => item.id)).not.toContain(opened.id);
 
 		const upload = await Effect.runPromise(
-			spaceClient(() => exports.Space.getByName("acme")).createUpload("image/png"),
+			spaceClient(() => exports.Space.getByName("acme"), caller).createUpload("image/png"),
 		);
 		const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 7]);
 		const stored = await call(app, `/api/v1/uploads/${upload.spaceId}/${upload.token}`, {
@@ -240,7 +241,7 @@ describe("a JWT-gated deployment", () => {
 			},
 		});
 
-		const shared = spaceClient(() => exports.Space.getByName("shared"));
+		const shared = spaceClient(() => exports.Space.getByName("shared"), caller);
 		let opened: Ask | undefined;
 		for (let attempt = 0; opened === undefined && attempt < 100; attempt += 1) {
 			opened = (await Effect.runPromise(shared.snapshot())).open.find(

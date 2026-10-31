@@ -15,13 +15,14 @@ import { REATTACH_WINDOW_MS } from "../src/domain/ask.ts";
 import { AskNotFound } from "../src/domain/errors.ts";
 import { spaceClient } from "../src/space/rpc.ts";
 import { PRESENCE_GRACE_MS, Presence } from "../src/space/services.ts";
+import { caller } from "./caller.ts";
 
 /** Who asks and replies in these tests, as the token gate names its one person. */
 const OWNER = { id: "owner" };
 
 const fresh = () => {
 	const stub = exports.Space.get(exports.Space.idFromName(crypto.randomUUID()));
-	return { stub, space: spaceClient(() => stub) };
+	return { stub, space: spaceClient(() => stub, caller) };
 };
 
 const colour: QuestionInput = {
@@ -284,7 +285,7 @@ describe("asks", () => {
 					},
 				};
 			};
-			const space = spaceClient(flaky);
+			const space = spaceClient(flaky, caller);
 			const reset = () =>
 				Object.assign(new Error("Durable Object reset because its code was updated."), {
 					retryable: true,

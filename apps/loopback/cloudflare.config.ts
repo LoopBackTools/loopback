@@ -23,6 +23,8 @@ export default defineConfig({
 			LOOPBACK_TOKEN: bindings.secret(),
 			// No bucket name: the first deploy provisions one.
 			FILES: bindings.r2(),
+			// Which deploy the code is from: a space still on older code restarts onto newer.
+			CF_VERSION_METADATA: bindings.versionMetadata(),
 		},
 		// The server reaches its spaces through the runtime's binding for this export, so no
 		// Durable Object binding names this Worker, and a copy deployed under another name still works.
