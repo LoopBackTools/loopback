@@ -1,7 +1,16 @@
 import { Badge, Banner, Button, InputArea, Text } from "@cloudflare/kumo";
 import { useAtomSet } from "@effect/atom-react";
-import { ApiError, type Ask, type Entry, type QuestionAsk, type Reply } from "@loopbackhq/sdk";
 import {
+	ApiError,
+	type Ask,
+	type Entry,
+	type QuestionAsk,
+	type Reply,
+	type ReplyBody,
+	type UnknownAsk,
+} from "@loopbackhq/sdk";
+import {
+	ArrowClockwise,
 	ArrowLeft,
 	Check,
 	ChatTeardropText,
@@ -50,6 +59,8 @@ const said = (reply: Reply, who: string): { readonly title: string; readonly bod
 			return {
 				title: `${who} replied on ${reply.points.length} ${reply.points.length === 1 ? "point" : "points"}`,
 			};
+		case "unknown":
+			return { title: `${who} replied in a way this page can't show` };
 	}
 };
 
@@ -74,7 +85,7 @@ function ReplyPanel({ ask, onReplied }: { readonly ask: Ask; readonly onReplied:
 	} | null>(null);
 	const words = text.trim();
 
-	const submit = async (key: string, reply: Reply) => {
+	const submit = async (key: string, reply: ReplyBody) => {
 		setSending(key);
 		setError(null);
 		const exit = await send({ askId: ask.id, reply });
@@ -112,7 +123,7 @@ function ReplyPanel({ ask, onReplied }: { readonly ask: Ask; readonly onReplied:
 		}
 	};
 
-	const primary = (): [string, Reply] | null =>
+	const primary = (): [string, ReplyBody] | null =>
 		question !== null
 			? picked.length > 0 || words !== ""
 				? ["send", { outcome: "answered", selected: [...picked], ...note }]
@@ -295,8 +306,20 @@ function Choices({
 
 const nothing = () => {};
 
-/** An ask the inbox could not draw, with the one move still open to the person: dismissing it. */
-function CannotShow({ ask, onReplied }: { readonly ask: Ask; readonly onReplied: () => void }) {
+/**
+ * An ask the inbox could not draw, with the moves still open to the person: dismissing it, and, for
+ * one sent by a newer version of Loopback than this page, reloading to see it.
+ */
+function CannotShow({
+	ask,
+	onReplied,
+	newer = false,
+}: {
+	readonly ask: Ask;
+	readonly onReplied: () => void;
+	/** Whether it is an ask of a kind this page doesn't know, from a newer version. */
+	readonly newer?: boolean;
+}) {
 	const { onSelect } = useNavigation();
 	const send = useAtomSet(replyAtom(useClient()), { mode: "promiseExit" });
 	const [sending, setSending] = useState(false);
@@ -326,7 +349,11 @@ function CannotShow({ ask, onReplied }: { readonly ask: Ask; readonly onReplied:
 				variant="error"
 				icon={<WarningCircle />}
 				title="This ask can't be shown"
-				description="It doesn't match what this inbox knows how to draw, perhaps because it was sent while Loopback was being updated. Dismiss it, and the agent can send it again."
+				description={
+					newer
+						? "It came from a newer version of Loopback than this page. Reload the page to see it."
+						: "It doesn't match what this inbox knows how to draw, perhaps because it was sent while Loopback was being updated. Dismiss it, and the agent can send it again."
+				}
 			/>
 			{failed === null ? null : (
 				<Banner
@@ -337,17 +364,29 @@ function CannotShow({ ask, onReplied }: { readonly ask: Ask; readonly onReplied:
 					description={failed}
 				/>
 			)}
-			{ask.status === "closed" ? null : (
-				<Button
-					className="w-fit"
-					variant="ghost"
-					icon={<X />}
-					loading={sending}
-					onClick={() => void dismiss()}
-				>
-					Dismiss
-				</Button>
-			)}
+			<div className="flex gap-2">
+				{newer ? (
+					<Button
+						className="w-fit"
+						variant="secondary"
+						icon={<ArrowClockwise />}
+						onClick={() => window.location.reload()}
+					>
+						Reload
+					</Button>
+				) : null}
+				{ask.status === "closed" ? null : (
+					<Button
+						className="w-fit"
+						variant="ghost"
+						icon={<X />}
+						loading={sending}
+						onClick={() => void dismiss()}
+					>
+						Dismiss
+					</Button>
+				)}
+			</div>
 		</article>
 	);
 }
@@ -384,6 +423,7 @@ export function AskDetail({
 	/** Called once a reply is sent: the inbox moves on to whatever is next. */
 	readonly onReplied?: () => void;
 }) {
+	if (ask.kind === "unknown") return <CannotShow ask={ask} onReplied={onReplied} newer />;
 	return (
 		<Drawable key={ask.id} ask={ask} onReplied={onReplied}>
 			<AskView ask={ask} onReplied={onReplied} />
@@ -392,7 +432,13 @@ export function AskDetail({
 }
 
 /** One ask: what the agent wants, the thread so far, and the moves left. */
-function AskView({ ask, onReplied }: { readonly ask: Ask; readonly onReplied: () => void }) {
+function AskView({
+	ask,
+	onReplied,
+}: {
+	readonly ask: Exclude<Ask, UnknownAsk>;
+	readonly onReplied: () => void;
+}) {
 	const { onSelect } = useNavigation();
 	const now = useNow();
 	const me = useMe();

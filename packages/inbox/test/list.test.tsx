@@ -1,11 +1,11 @@
-import { type Ask, type InboxState, numberBriefing } from "@loopbackhq/sdk";
+import { type Ask, type InboxState, numberBriefing, type QuestionAsk } from "@loopbackhq/sdk";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import { AskList } from "../src/list.tsx";
 import { Host } from "./host.tsx";
 
-const ask = (id: string, status: Ask["status"]): Ask => ({
+const ask = (id: string, status: Ask["status"]): QuestionAsk => ({
 	kind: "question",
 	prompt: { question: `Question ${id}?`, options: [], multiple: false },
 	id,
@@ -56,6 +56,23 @@ describe("the ask list", () => {
 			wrapper: Host,
 		});
 		expect(screen.getByText("Nothing needs you right now.")).toBeInTheDocument();
+	});
+
+	it("lists an ask of a kind this page doesn't know, saying it can't be shown", () => {
+		const unknown: Ask = {
+			kind: "unknown",
+			was: "poll",
+			id: "u1",
+			status: "awaiting_human",
+			waiting: false,
+			createdAt: "2026-10-28T11:00:00.000Z",
+			updatedAt: "2026-10-28T11:00:00.000Z",
+		};
+		render(<AskList inbox={inbox([unknown, ask("a", "awaiting_human")], [])} selected={null} />, {
+			wrapper: Host,
+		});
+		expect(screen.getByText("An ask this page can't show")).toBeInTheDocument();
+		expect(screen.getByText("Question a?")).toBeInTheDocument();
 	});
 
 	it("shows how many points of a briefing need the person", () => {

@@ -1,8 +1,9 @@
 import type { Ask, ServerEvent } from "@loopbackhq/protocol";
+import * as Read from "@loopbackhq/protocol/schema";
 import { describe, expect, it } from "@effect/vitest";
 import { runInDurableObject } from "cloudflare:test";
 import { env, exports } from "cloudflare:workers";
-import { Cause, ConfigProvider, Effect, Exit, Layer } from "effect";
+import { Cause, ConfigProvider, Effect, Exit, Layer, Schema } from "effect";
 import { DEFAULT_SPACE, Gate, TokenGate, WorkerEnv } from "../src/index.ts";
 import packageJson from "../package.json" with { type: "json" };
 import { UploadIncomplete } from "../src/domain/errors.ts";
@@ -367,5 +368,73 @@ describe("uploads", () => {
 	it("answers 404 for a file that was never stored", async () => {
 		const ticket = await Effect.runPromise(space.createUpload("image/png"));
 		expect((await api(`/files/${ticket.uploadId}`)).status).toBe(404);
+	});
+});
+
+/** Every place a decoded message was read as `unknown`, by path: none, for what this server writes. */
+const unknownsIn = (value: unknown, path = "$"): string[] => {
+	if (Array.isArray(value))
+		return value.flatMap((item, index) => unknownsIn(item, `${path}[${index}]`));
+	if (typeof value !== "object" || value === null) return [];
+	const record = value as Record<string, unknown>;
+	const here = ["kind", "type", "outcome"].some((tag) => record[tag] === "unknown") ? [path] : [];
+	return [
+		...here,
+		...Object.entries(record).flatMap(([key, inner]) => unknownsIn(inner, `${path}.${key}`)),
+	];
+};
+
+describe("what the server sends", () => {
+	it("a reader decodes as what it is, at the contract's latest revision", async () => {
+		const asked = await Effect.runPromise(question("Read me?"));
+		await Effect.runPromise(
+			space.reply(asked.id, { outcome: "follow_up", question: "Which?" }, OWNER),
+		);
+		await Effect.runPromise(
+			space.open({
+				actor: OWNER,
+				kind: "review",
+				input: {
+					title: "Every block",
+					summary: "Read in full.",
+					content: [
+						{ type: "markdown", text: "Prose." },
+						{ type: "code", code: "const x = 1;", language: "ts", filename: "x.ts" },
+						{ type: "diff", diff: "-a\n+b", filename: "a.txt" },
+					],
+					project: "http-test",
+				},
+			}),
+		);
+		const briefing = await Effect.runPromise(
+			space.open({
+				actor: OWNER,
+				kind: "briefing",
+				input: {
+					title: "How it reads",
+					sections: [{ title: "One", points: [{ title: "First" }, { title: "Second" }] }],
+					project: "http-test",
+				},
+			}),
+		);
+		await Effect.runPromise(
+			space.reply(
+				briefing.id,
+				{ outcome: "responded", points: [{ point: "1", text: "Why?" }] },
+				OWNER,
+			),
+		);
+
+		const snapshot = Schema.decodeUnknownSync(Read.Snapshot)(await (await api("/snapshot")).json());
+		const kinds = new Set(snapshot.open.map((item) => item.kind));
+		expect(kinds).toEqual(new Set(["question", "review", "briefing"]));
+		expect(unknownsIn(snapshot)).toEqual([]);
+		const one = Schema.decodeUnknownSync(Read.Ask)(
+			await (await api(`/asks/${briefing.id}`)).json(),
+		);
+		expect(unknownsIn(one)).toEqual([]);
+		expect(
+			unknownsIn(Schema.decodeUnknownSync(Read.Whoami)(await (await api("/whoami")).json())),
+		).toEqual([]);
 	});
 });

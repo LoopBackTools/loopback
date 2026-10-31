@@ -8,7 +8,7 @@ import {
 	type PointNode,
 	type PointReply,
 	type PointTurn,
-	type Reply,
+	type ReplyBody,
 	respondedProblem,
 } from "@loopbackhq/sdk";
 import {
@@ -341,7 +341,7 @@ export function BriefingBody({
 	const yourMove = ask.status === "awaiting_human";
 	const busy = sending !== null;
 	const items = replyFrom(tree, drafts, false);
-	const reply: Reply = { outcome: "responded", points: items };
+	const reply: ReplyBody = { outcome: "responded", points: items };
 	const problem = items.length === 0 ? null : respondedProblem(ask.prompt, ask.thread, reply);
 	const finishes =
 		items.length > 0 &&
@@ -367,7 +367,7 @@ export function BriefingBody({
 		);
 	};
 
-	const submit = async (key: string, sent: Reply) => {
+	const submit = async (key: string, sent: ReplyBody) => {
 		setSending(key);
 		setError(null);
 		const exit = await send({ askId: ask.id, reply: sent });

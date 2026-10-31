@@ -1,8 +1,12 @@
-import type { Ask } from "@loopbackhq/protocol";
+import type { Ask, QuestionAsk } from "@loopbackhq/protocol/schema";
 import { describe, expect, it } from "vitest";
 import { applyEvent, awaitingHuman, initialInbox, RECENT_LIMIT } from "../src/index.ts";
 
-const ask = (id: string, createdAt: string, status: Ask["status"] = "awaiting_human"): Ask => ({
+const ask = (
+	id: string,
+	createdAt: string,
+	status: Ask["status"] = "awaiting_human",
+): QuestionAsk => ({
 	kind: "question",
 	prompt: { question: `Question ${id}?`, options: [], multiple: false },
 	id,
@@ -33,7 +37,7 @@ describe("the inbox", () => {
 			ask: { ...ask("old", "2026-01-01"), waiting: true },
 		});
 		expect(state.open.map((item) => item.id)).toEqual(["new", "old"]);
-		expect(state.open[1]?.waiting).toBe(true);
+		expect(state.open[1]).toMatchObject({ waiting: true });
 		state = applyEvent(state, { type: "ask.updated", ask: ask("new", "2026-01-03", "closed") });
 		expect(state.open.map((item) => item.id)).toEqual(["old"]);
 		expect(state.recent.map((item) => item.id)).toEqual(["new"]);

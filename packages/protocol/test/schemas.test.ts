@@ -103,9 +103,30 @@ describe("a message from a newer revision", () => {
 			was: "poll",
 			id: "ask_1",
 			status: "awaiting_human",
+			waiting: true,
 			project: "loopback",
 			createdAt: "2026-10-30T09:00:00.000Z",
 			updatedAt: "2026-10-30T09:01:00.000Z",
+		});
+	});
+
+	it("of a kind it doesn't know, without what it doesn't need, still reads as an unknown ask", () => {
+		expect(
+			Schema.decodeUnknownSync(Ask)({
+				kind: "poll",
+				id: "ask_9",
+				status: "closed",
+				createdAt: "2026-10-30T09:00:00.000Z",
+				updatedAt: "2026-10-30T09:00:00.000Z",
+			}),
+		).toEqual({
+			kind: "unknown",
+			was: "poll",
+			id: "ask_9",
+			status: "closed",
+			waiting: false,
+			createdAt: "2026-10-30T09:00:00.000Z",
+			updatedAt: "2026-10-30T09:00:00.000Z",
 		});
 	});
 

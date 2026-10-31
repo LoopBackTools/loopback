@@ -145,6 +145,56 @@ describe("an ask the inbox cannot draw", () => {
 	});
 });
 
+describe("a message from a newer version of Loopback", () => {
+	it("of a kind this page doesn't know says so, offers a reload, and can still be dismissed", async () => {
+		const user = userEvent.setup();
+		show({
+			kind: "unknown",
+			was: "poll",
+			id: "u1",
+			status: "awaiting_human",
+			waiting: true,
+			createdAt: "2026-10-27T10:00:00.000Z",
+			updatedAt: "2026-10-27T10:00:00.000Z",
+		});
+		expect(screen.getByText(/This ask can't be shown/)).toBeInTheDocument();
+		expect(screen.getByText(/newer version of Loopback than this page/)).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "Reload" })).toBeInTheDocument();
+		await user.click(screen.getByRole("button", { name: "Dismiss" }));
+		await waitFor(() => expect(sent).toHaveLength(1));
+		expect(sent[0]?.reply).toEqual({ outcome: "dismissed" });
+	});
+
+	it("with a block this page doesn't know notes it in place, and shows the rest", () => {
+		show({
+			...review,
+			prompt: {
+				title: "Landing copy",
+				content: [
+					{ type: "markdown", text: "Ask your agent anything." },
+					{ type: "unknown", was: "chart" },
+				],
+			},
+		});
+		expect(screen.getByText("Ask your agent anything.")).toBeInTheDocument();
+		expect(screen.getByText(/can't be shown here/)).toBeInTheDocument();
+	});
+
+	it("with a reply this page doesn't know shows it in the thread as one", () => {
+		show({
+			...review,
+			thread: [
+				{
+					author: "human",
+					reply: { outcome: "unknown", was: "snoozed" },
+					at: "2026-10-27T10:01:00.000Z",
+				},
+			],
+		});
+		expect(screen.getByText(/replied in a way this page can't show/)).toBeInTheDocument();
+	});
+});
+
 describe("moving on", () => {
 	it("tells the inbox once a reply has been sent, and not before", async () => {
 		const user = userEvent.setup();

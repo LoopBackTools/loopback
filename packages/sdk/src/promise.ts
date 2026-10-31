@@ -1,4 +1,5 @@
-import type { Ask, AskPage, Reply, Snapshot, Whoami } from "@loopbackhq/protocol";
+import type { Reply as ReplyBody } from "@loopbackhq/protocol";
+import type { Ask, AskPage, Snapshot, Whoami } from "@loopbackhq/protocol/schema";
 import { Cause, Effect, Exit, Fiber, Stream } from "effect";
 import { type ApiError, type LoopbackConfig, make } from "./client.ts";
 import { type InboxState, initialInbox } from "./inbox.ts";
@@ -20,7 +21,7 @@ export interface LoopbackPromiseClient {
 		readonly before?: string;
 		readonly limit?: number;
 	}) => Promise<AskPage>;
-	readonly reply: (id: string, reply: Reply) => Promise<Ask>;
+	readonly reply: (id: string, reply: ReplyBody) => Promise<Ask>;
 	readonly file: (uploadId: string) => Promise<Blob>;
 	readonly inbox: InboxStore;
 }

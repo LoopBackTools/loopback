@@ -1,4 +1,4 @@
-import type { Ask, ServerEvent } from "@loopbackhq/protocol";
+import type { Ask, ServerEvent, UnknownEvent } from "@loopbackhq/protocol/schema";
 
 /** How many closed asks the inbox keeps, matching what a snapshot carries. */
 export const RECENT_LIMIT = 50;
@@ -16,8 +16,11 @@ export interface InboxState {
 	readonly recent: readonly Ask[];
 }
 
-/** What the event stream yields: the server's frames, and the socket dropping. */
-export type InboxEvent = ServerEvent | { readonly type: "disconnected" };
+/**
+ * What the event stream yields: the server's frames it can read, and the socket dropping. A frame of
+ * a type this client doesn't know is skipped before it gets here.
+ */
+export type InboxEvent = Exclude<ServerEvent, UnknownEvent> | { readonly type: "disconnected" };
 
 export const initialInbox: InboxState = { status: "connecting", open: [], recent: [] };
 

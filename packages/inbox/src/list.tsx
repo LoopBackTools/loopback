@@ -1,6 +1,13 @@
 import { Badge, Text } from "@cloudflare/kumo";
 import type { Ask, InboxState } from "@loopbackhq/sdk";
-import { CaretDown, CaretRight, ChatCircleDots, Eye, ListBullets } from "@phosphor-icons/react";
+import {
+	CaretDown,
+	CaretRight,
+	ChatCircleDots,
+	Eye,
+	ListBullets,
+	Question,
+} from "@phosphor-icons/react";
 import { AskLink } from "./context.tsx";
 import { age, headline, pointsNeedingYou, useNow, useRecentOpen } from "./hooks.ts";
 
@@ -12,6 +19,8 @@ export function KindIcon({ ask }: { readonly ask: Ask }) {
 			return <Eye size={18} weight="duotone" aria-label="Review" />;
 		case "briefing":
 			return <ListBullets size={18} weight="duotone" aria-label="Briefing" />;
+		case "unknown":
+			return <Question size={18} weight="duotone" aria-label="Can't be shown" />;
 	}
 }
 

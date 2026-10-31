@@ -1,14 +1,24 @@
-import type {
+import type { Problem, Reply as ReplyBody } from "@loopbackhq/protocol";
+import {
 	Ask,
 	AskPage,
 	EventTicket,
-	Problem,
-	Reply,
 	ServerEvent,
 	Snapshot,
 	Whoami,
-} from "@loopbackhq/protocol";
-import { Context, Deferred, Effect, Exit, Layer, Queue, Schedule, Schema, Stream } from "effect";
+} from "@loopbackhq/protocol/schema";
+import {
+	Context,
+	Deferred,
+	Effect,
+	Exit,
+	Layer,
+	Option,
+	Queue,
+	Schedule,
+	Schema,
+	Stream,
+} from "effect";
 import { applyEvent, type InboxEvent, type InboxState, initialInbox } from "./inbox.ts";
 
 /** A request Loopback refused, or one that never reached it (`status` 0). */
@@ -61,7 +71,7 @@ export interface LoopbackApi {
 		readonly before?: string;
 		readonly limit?: number;
 	}) => Effect.Effect<AskPage, ApiError>;
-	readonly reply: (id: string, reply: Reply) => Effect.Effect<Ask, ApiError>;
+	readonly reply: (id: string, reply: ReplyBody) => Effect.Effect<Ask, ApiError>;
 	/** An uploaded image, for showing in a review. */
 	readonly file: (uploadId: string) => Effect.Effect<Blob, ApiError>;
 	/** The event socket's frames, reconnecting for as long as the stream runs. */
@@ -72,11 +82,8 @@ export interface LoopbackApi {
 
 class SocketClosed extends Schema.TaggedError<SocketClosed>()("SocketClosed", {}) {}
 
-const isServerEvent = (value: unknown): value is ServerEvent =>
-	typeof value === "object" &&
-	value !== null &&
-	"type" in value &&
-	(value.type === "snapshot" || value.type === "ask.opened" || value.type === "ask.updated");
+/** A frame as the contract says it is, or none for one that isn't a frame at all. */
+const decodeFrame = Schema.decodeUnknownOption(ServerEvent);
 
 export const make = (config: LoopbackConfig): LoopbackApi => {
 	const base = config.baseUrl.replace(/\/+$/, "");
@@ -128,10 +135,24 @@ export const make = (config: LoopbackConfig): LoopbackApi => {
 			});
 		});
 
-	const json = <A>(path: string, init?: RequestInit) =>
-		Effect.flatMap(request(path, init), (response) =>
-			Effect.tryPromise({ try: (): Promise<A> => response.json(), catch: unreadable(response) }),
-		);
+	/**
+	 * A response body, decoded as the contract says it is rather than cast to it. A message from a
+	 * newer revision decodes to the `unknown` member of its union; a body that isn't the contract at
+	 * all is refused as `invalid_body`.
+	 */
+	const read =
+		<A, I>(schema: Schema.Codec<A, I>) =>
+		(path: string, init?: RequestInit) =>
+			Effect.flatMap(request(path, init), (response) =>
+				Effect.tryPromise({
+					try: (): Promise<unknown> => response.json(),
+					catch: unreadable(response),
+				}).pipe(
+					Effect.flatMap((body) =>
+						Effect.mapError(Schema.decodeUnknownEffect(schema)(body), unreadable(response)),
+					),
+				),
+			);
 
 	/**
 	 * One connection: its frames, then a failure when it closes. Only a connection that was live
@@ -142,7 +163,7 @@ export const make = (config: LoopbackConfig): LoopbackApi => {
 		Effect.gen(function* () {
 			const Socket = socketClass();
 			const { ticket } = yield* Effect.mapError(
-				json<EventTicket>("/events/tickets", { method: "POST" }),
+				read(EventTicket)("/events/tickets", { method: "POST" }),
 				() => new SocketClosed(),
 			);
 			const url = `${base.replace(/^http/, "ws")}/api/v1/events`;
@@ -163,9 +184,11 @@ export const make = (config: LoopbackConfig): LoopbackApi => {
 				} catch {
 					return;
 				}
-				if (!isServerEvent(frame)) return;
+				// A frame of a type this client doesn't know, from a newer revision, is skipped.
+				const event = decodeFrame(frame);
+				if (Option.isNone(event) || event.value.type === "unknown") return;
 				live = true;
-				Queue.offerUnsafe(queue, frame);
+				Queue.offerUnsafe(queue, event.value);
 			});
 			const close = () => Deferred.doneUnsafe(closed, Exit.void);
 			socket.addEventListener("close", close);
@@ -186,18 +209,18 @@ export const make = (config: LoopbackConfig): LoopbackApi => {
 	);
 
 	return {
-		whoami: json<Whoami>("/whoami"),
-		snapshot: json<Snapshot>("/snapshot"),
-		ask: (id) => json<Ask>(`/asks/${encodeURIComponent(id)}`),
+		whoami: read(Whoami)("/whoami"),
+		snapshot: read(Snapshot)("/snapshot"),
+		ask: (id) => read(Ask)(`/asks/${encodeURIComponent(id)}`),
 		history: (page = {}) => {
 			const query = new URLSearchParams();
 			if (page.before !== undefined) query.set("before", page.before);
 			if (page.limit !== undefined) query.set("limit", String(page.limit));
 			const search = query.size === 0 ? "" : `?${query}`;
-			return json<AskPage>(`/asks${search}`);
+			return read(AskPage)(`/asks${search}`);
 		},
 		reply: (id, reply) =>
-			json<Ask>(`/asks/${encodeURIComponent(id)}/reply`, {
+			read(Ask)(`/asks/${encodeURIComponent(id)}/reply`, {
 				method: "POST",
 				body: JSON.stringify(reply),
 				headers: { "Content-Type": "application/json" },

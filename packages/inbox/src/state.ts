@@ -1,4 +1,4 @@
-import { type ApiError, initialInbox, type LoopbackApi, type Reply } from "@loopbackhq/sdk";
+import { type ApiError, initialInbox, type LoopbackApi, type ReplyBody } from "@loopbackhq/sdk";
 import { Effect } from "effect";
 import { Atom } from "effect/reactivity";
 
@@ -25,8 +25,10 @@ export const meAtom = Atom.family((client: LoopbackApi) =>
 /** Sends a reply to an ask. */
 export const replyAtom = Atom.family((client: LoopbackApi) =>
 	Atom.fn(
-		(input: { readonly askId: string; readonly reply: Reply }): Effect.Effect<unknown, ApiError> =>
-			client.reply(input.askId, input.reply),
+		(input: {
+			readonly askId: string;
+			readonly reply: ReplyBody;
+		}): Effect.Effect<unknown, ApiError> => client.reply(input.askId, input.reply),
 	),
 );
 

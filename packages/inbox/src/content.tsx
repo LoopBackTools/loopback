@@ -103,6 +103,12 @@ function BlockView({ block }: { readonly block: Block }) {
 					{...(block.caption === undefined ? {} : { caption: block.caption })}
 				/>
 			);
+		case "unknown":
+			return (
+				<Caption>
+					Part of this came from a newer version of Loopback and can't be shown here.
+				</Caption>
+			);
 	}
 }
 

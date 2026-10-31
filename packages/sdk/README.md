@@ -56,14 +56,27 @@ refused before it is sent.
 disconnects after its last one leaves.
 
 ```tsx
+import type { Ask } from "@loopbackhq/sdk";
 import { useSyncExternalStore } from "react";
+
+const titleOf = (ask: Ask) => {
+	switch (ask.kind) {
+		case "question":
+			return ask.prompt.question;
+		case "review":
+		case "briefing":
+			return ask.prompt.title;
+		case "unknown":
+			return "Reload to see this ask";
+	}
+};
 
 function Inbox() {
 	const inbox = useSyncExternalStore(loopback.inbox.subscribe, loopback.inbox.getSnapshot);
 	return (
 		<ul>
 			{inbox.open.map((ask) => (
-				<li key={ask.id}>{ask.kind === "question" ? ask.prompt.question : ask.prompt.title}</li>
+				<li key={ask.id}>{titleOf(ask)}</li>
 			))}
 		</ul>
 	);
@@ -95,5 +108,13 @@ for anyone keeping their own state.
 
 ## Types
 
-Every type the API speaks (`Ask`, `Reply`, `Block`, `Snapshot`, …) is re-exported from
-`@loopbackhq/protocol`, which is generated from the API's TypeSpec definition.
+Every type the API speaks (`Ask`, `Reply`, `Block`, `Snapshot`, …) is re-exported, generated from
+the API's TypeSpec definition. The client decodes everything it receives against them rather than
+trusting it, and refuses a body that isn't the contract as an `ApiError` with the code
+`invalid_body`.
+
+A deployment can run a newer revision of the contract than the code that reads it, so each union a
+release can grow ends in an `unknown` member: an `Ask` of kind `unknown`, a `Block` of type
+`unknown`, a `Reply` with the outcome `unknown`. Each keeps what can still be shown and what it was
+(`was`). An exhaustive `switch` has to handle it, and the compiler says so. Socket frames of a type
+the client doesn't know are skipped. What a reply sends is `ReplyBody`.

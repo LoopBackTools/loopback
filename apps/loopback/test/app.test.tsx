@@ -11,7 +11,7 @@ const serving = (whoami: number) => {
 		const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
 		seen.push({ url, authorization: new Headers(init?.headers).get("Authorization") });
 		return url.endsWith("/api/v1/whoami") && whoami === 200
-			? Response.json({ space: "default" })
+			? Response.json({ space: "default", actor: { id: "host" } })
 			: Response.json({ code: "auth.unauthorized", message: "No." }, { status: 401 });
 	});
 	return seen;

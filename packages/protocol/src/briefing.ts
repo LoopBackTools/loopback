@@ -1,19 +1,25 @@
 import type {
-	Actor,
 	AgentEntry,
-	Block,
 	BriefingInput,
 	BriefingPoint,
 	BriefingPrompt,
-	Entry,
 	Point,
 	PointAnswer,
-	Responded,
 } from "./generated/requests.gen.ts";
+import type {
+	Actor as ReadActor,
+	Block as ReadBlock,
+	BriefingPrompt as ReadBriefingPrompt,
+	Entry as ReadEntry,
+	Point as ReadPoint,
+	Responded,
+} from "./generated/schemas.gen.ts";
 
 // A briefing's points, and where each stands, are never stored: they are folded from its prompt and
 // its thread. The server validates with this fold and every frontend renders with it, so the two
-// cannot disagree about what a reply means.
+// cannot disagree about what a reply means. Folding takes messages as a reader decodes them, so a
+// reply or a block from a newer revision (an `unknown` one) is folded past rather than refused; what
+// is built here for the server to write (a numbered prompt, the agent's entries) is the exact shape.
 
 /** The most top-level points a briefing may hold. */
 export const MAX_TOP_POINTS = 50;
@@ -34,13 +40,13 @@ export type PointTurn =
 			readonly author: "human";
 			readonly text?: string;
 			readonly resolved: boolean;
-			readonly by?: Actor;
+			readonly by?: ReadActor;
 			readonly at: string;
 	  }
 	| {
 			readonly author: "agent";
 			readonly answer: string;
-			readonly content?: readonly Block[];
+			readonly content?: readonly ReadBlock[];
 			readonly at: string;
 	  };
 
@@ -49,7 +55,7 @@ export interface PointNode {
 	readonly id: string;
 	readonly title: string;
 	readonly detail?: string;
-	readonly content?: readonly Block[];
+	readonly content?: readonly ReadBlock[];
 	/** 1 for a top-level point, 2 beneath it, and so on. */
 	readonly depth: number;
 	readonly state: PointState;
@@ -105,7 +111,7 @@ export const numberBriefing = (
 
 /** A point while the fold is building it. */
 interface Building {
-	readonly point: Point;
+	readonly point: ReadPoint;
 	readonly depth: number;
 	readonly parent: Building | undefined;
 	readonly turns: PointTurn[];
@@ -160,9 +166,12 @@ const inOrder = (points: readonly PointNode[]): PointNode[] =>
 	points.flatMap((point) => [point, ...inOrder(point.points)]);
 
 /** The briefing as its thread leaves it. Entries naming a point it does not have change nothing. */
-export const foldBriefing = (prompt: BriefingPrompt, thread: readonly Entry[]): BriefingTree => {
+export const foldBriefing = (
+	prompt: ReadBriefingPrompt,
+	thread: readonly ReadEntry[],
+): BriefingTree => {
 	const byId = new Map<string, Building>();
-	const add = (point: Point, parent: Building | undefined): Building => {
+	const add = (point: ReadPoint, parent: Building | undefined): Building => {
 		const node: Building = {
 			point,
 			depth: parent === undefined ? 1 : parent.depth + 1,
@@ -244,8 +253,8 @@ const listed = (ids: readonly string[]): string =>
  * leaves the agent something to answer.
  */
 export const respondedProblem = (
-	prompt: BriefingPrompt,
-	thread: readonly Entry[],
+	prompt: ReadBriefingPrompt,
+	thread: readonly ReadEntry[],
 	reply: Responded,
 ): string | null => {
 	const tree = foldBriefing(prompt, thread);

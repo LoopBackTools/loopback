@@ -1,4 +1,4 @@
-import type { Ask, ServerEvent } from "@loopbackhq/protocol";
+import type { Ask, ServerEvent } from "@loopbackhq/protocol/schema";
 import { describe, expect, it } from "vitest";
 import { ApiError, createLoopbackClient, type InboxState } from "../src/index.ts";
 
@@ -38,7 +38,7 @@ class FakeSocket extends EventTarget {
 		this.closed = true;
 	}
 
-	receive(frame: ServerEvent) {
+	receive(frame: ServerEvent | Record<string, unknown>) {
 		this.dispatchEvent(new MessageEvent("message", { data: JSON.stringify(frame) }));
 	}
 
@@ -144,5 +144,54 @@ describe("the client", () => {
 		stop();
 		await until(() => FakeSocket.opened[1]?.closed === true);
 		expect(states.length).toBeGreaterThan(3);
+	});
+});
+
+describe("a message from a newer revision of the contract", () => {
+	it("of a kind of ask the client doesn't know reads as unknown, and the rest as they are", async () => {
+		const { fetch } = recording({
+			[`GET /api/v1/snapshot`]: () =>
+				Response.json({ open: [ask, { ...ask, id: "ask-2", kind: "poll" }], recent: [] }),
+		});
+		const client = createLoopbackClient({ baseUrl: "https://lb.test", token: "secret", fetch });
+		const snapshot = await client.snapshot();
+		expect(snapshot.open.map((item) => item.kind)).toEqual(["question", "unknown"]);
+		expect(snapshot.open[1]).toMatchObject({ id: "ask-2", was: "poll" });
+	});
+
+	it("on the event socket, of a type the client doesn't know, is skipped", async () => {
+		FakeSocket.opened.length = 0;
+		const { fetch } = recording({
+			[`POST /api/v1/events/tickets`]: () =>
+				Response.json(
+					{ ticket: "space.pass", expiresAt: "2026-01-01T00:01:00.000Z" },
+					{ status: 201 },
+				),
+		});
+		const client = createLoopbackClient({
+			baseUrl: "https://lb.test",
+			token: "secret",
+			fetch,
+			WebSocket: FakeSocket as unknown as typeof globalThis.WebSocket,
+		});
+		const stop = client.inbox.subscribe(() => undefined);
+		await until(() => FakeSocket.opened.length === 1);
+		const socket = FakeSocket.opened[0];
+		socket?.receive({ type: "snapshot", snapshot: { open: [], recent: [] } });
+		socket?.receive({ type: "ask.deleted", id: "ask-1" });
+		socket?.receive({ type: "ask.opened", ask });
+		await until(() => client.inbox.getSnapshot().open.length === 1);
+		expect(client.inbox.getSnapshot()).toMatchObject({ status: "live", open: [{ id: "ask-1" }] });
+		stop();
+	});
+});
+
+describe("a body that isn't the contract", () => {
+	it("is refused as invalid_body, not handed on as if it were", async () => {
+		const { fetch } = recording({ [`GET /api/v1/whoami`]: () => Response.json({ nope: true }) });
+		const client = createLoopbackClient({ baseUrl: "https://lb.test", token: "secret", fetch });
+		const error = await client.whoami().catch((reason: unknown) => reason);
+		expect(error).toBeInstanceOf(ApiError);
+		expect(error).toMatchObject({ status: 200, code: "invalid_body" });
 	});
 });

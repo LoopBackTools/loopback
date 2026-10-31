@@ -115,7 +115,11 @@ export const useRecentOpen = () => {
 
 /** The kind of thing an ask is, in a few words. */
 export const headline = (ask: Ask): string =>
-	ask.kind === "question" ? ask.prompt.question : ask.prompt.title;
+	ask.kind === "question"
+		? ask.prompt.question
+		: ask.kind === "unknown"
+			? "An ask this page can't show"
+			: ask.prompt.title;
 
 /** How many of a briefing's points need the person; none for any other ask, or when it is not their move. */
 export const pointsNeedingYou = (ask: Ask): number =>
