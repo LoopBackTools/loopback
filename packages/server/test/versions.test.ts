@@ -1,5 +1,6 @@
 import { REVISION } from "@loopbacktools/protocol/schema";
 import { describe, expect, it } from "@effect/vitest";
+import { runInDurableObject } from "cloudflare:test";
 import { env, exports } from "cloudflare:workers";
 import { Effect, Exit } from "effect";
 import {
@@ -203,6 +204,50 @@ describe("a space reading what it is called with", () => {
 				const ask = yield* space.open(question("Wait for me?"));
 				expect(unread(yield* Effect.exit(space.awaitReply(ask.id, unchecked("soon"))))).toBe(true);
 				expect(unread(yield* Effect.exit(space.get(unchecked(7))))).toBe(true);
+			}),
+		COLD_START,
+	);
+});
+
+describe("a space's stored asks", () => {
+	/** Each ask's revision, and each of its entries', as the space holds them. */
+	const revisions = (stub: DurableObjectStub) =>
+		runInDurableObject(stub, (_, state) => ({
+			asks: state.storage.sql.exec("SELECT id, revision FROM asks").toArray(),
+			entries: state.storage.sql.exec("SELECT ask_id, seq, revision FROM entries").toArray(),
+		}));
+
+	it.live(
+		"are stamped with the revision they were written at, as is each entry in their threads",
+		() =>
+			Effect.gen(function* () {
+				const stub = freshSpace();
+				const space = spaceClient(stub, caller);
+				const ask = yield* space.open(question("Stamped?"));
+				yield* space.reply(ask.id, { outcome: "dismissed" }, OWNER);
+				const stored = yield* Effect.promise(() => revisions(stub()));
+				expect(stored.asks).toEqual([{ id: ask.id, revision: REVISION }]);
+				expect(stored.entries).toEqual([{ ask_id: ask.id, seq: 1, revision: REVISION }]);
+			}),
+		COLD_START,
+	);
+
+	it.live(
+		"are revision 1 when written without one, as by code from before revisions were kept",
+		() =>
+			Effect.gen(function* () {
+				const stub = freshSpace();
+				yield* spaceClient(stub, caller).snapshot();
+				const stored = yield* Effect.promise(() =>
+					runInDurableObject(stub(), (_, state) => {
+						state.storage.sql.exec(
+							`INSERT INTO asks (id, kind, key, status, prompt, created_at, updated_at)
+							VALUES ('old', 'question', 'k', 'closed', '{}', '2026-01-01', '2026-01-01')`,
+						);
+						return state.storage.sql.exec("SELECT revision FROM asks WHERE id = 'old'").one();
+					}),
+				);
+				expect(stored).toEqual({ revision: 1 });
 			}),
 		COLD_START,
 	);

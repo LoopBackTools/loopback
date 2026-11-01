@@ -1,4 +1,5 @@
 import type { AskStatus, Entry, ImageType } from "@loopbacktools/protocol";
+import { REVISION } from "@loopbacktools/protocol/schema";
 import { Context, Effect, Layer, Option } from "effect";
 import { SqlClient } from "effect/sql";
 import type { AskRecord, EntryRecord } from "../domain/ask.ts";
@@ -56,7 +57,13 @@ const entryOf = (row: EntryRow): EntryRecord => ({
 	deliveredAt: row.deliveredAt,
 });
 
-/** Persistence for asks and their threads. Storage failing is a defect, not an error to handle. */
+/**
+ * Persistence for asks and their threads. Storage failing is a defect, not an error to handle.
+ *
+ * Every ask and entry is stamped with the revision of the contract it was written at. An ask's is the
+ * newest any of it was written at, its thread included, so code reading it knows from that alone
+ * whether it can. See docs/design/versioned-messages.md.
+ */
 export class AskStore extends Context.Service<
 	AskStore,
 	{
@@ -147,6 +154,7 @@ export class AskStore extends Context.Service<
 						updated_at: record.updatedAt,
 						closed_at: record.closedAt,
 						last_waited_at: record.lastWaitedAt,
+						revision: REVISION,
 					})}`.pipe(Effect.asVoid, Effect.orDie),
 
 				setStatus: (id, status, at) =>
@@ -154,7 +162,8 @@ export class AskStore extends Context.Service<
 						UPDATE asks
 						SET status = ${status},
 							updated_at = ${at},
-							closed_at = ${status === "closed" ? at : null}
+							closed_at = ${status === "closed" ? at : null},
+							revision = MAX(revision, ${REVISION})
 						WHERE id = ${id}
 					`.pipe(Effect.asVoid, Effect.orDie),
 
@@ -203,7 +212,9 @@ export class AskStore extends Context.Service<
 							author: entry.author,
 							body: JSON.stringify(entry),
 							delivered_at: null,
+							revision: REVISION,
 						})}`;
+						yield* sql`UPDATE asks SET revision = MAX(revision, ${REVISION}) WHERE id = ${askId}`;
 						return { askId, seq, entry, deliveredAt: null };
 					}).pipe(Effect.orDie),
 

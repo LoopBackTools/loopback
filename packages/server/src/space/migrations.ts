@@ -97,5 +97,12 @@ export const migrations = SqliteMigrator.layer({
 			const sql = yield* SqlClient.SqlClient;
 			yield* sql.unsafe(REPAIR_CONTENTLESS_REVIEWS);
 		}),
+		"0006_revisions": Effect.gen(function* () {
+			const sql = yield* SqlClient.SqlClient;
+			// The revision of the contract each ask and entry was written at. Rows from before it was
+			// recorded are revision 1, as is anything code from before then writes after a rollback.
+			yield* sql`ALTER TABLE asks ADD COLUMN revision INTEGER NOT NULL DEFAULT 1`;
+			yield* sql`ALTER TABLE entries ADD COLUMN revision INTEGER NOT NULL DEFAULT 1`;
+		}),
 	}),
 });
