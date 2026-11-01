@@ -1,6 +1,6 @@
 {
 	"name": "loopback",
-	"version": "0.3.0",
+	"version": "0.4.0",
 	"private": true,
 	"description": "The deployable Loopback Worker: the server, composed with the token gate, and the web inbox.",
 	"homepage": "https://github.com/LoopBackTools/loopback/tree/main/apps/loopback#readme",

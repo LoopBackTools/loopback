@@ -1,6 +1,6 @@
 {
 	"name": "@loopbacktools/sdk",
-	"version": "0.3.0",
+	"version": "0.4.0",
 	"description": "A client for Loopback: read and answer what agents ask, and follow the inbox live, from any frontend.",
 	"homepage": "https://github.com/LoopBackTools/loopback/tree/main/packages/sdk#readme",
 	"license": "MIT",
