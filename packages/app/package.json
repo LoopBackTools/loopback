@@ -1,6 +1,6 @@
 {
 	"name": "@loopbacktools/app",
-	"version": "0.4.0",
+	"version": "0.4.1",
 	"description": "The Loopback app: the inbox, routed, with its header and pages, for a deployment to compose with its own sign-in and workspaces.",
 	"homepage": "https://github.com/LoopBackTools/loopback/tree/main/packages/app#readme",
 	"license": "MIT",

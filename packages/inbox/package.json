@@ -1,6 +1,6 @@
 {
 	"name": "@loopbacktools/inbox",
-	"version": "0.4.0",
+	"version": "0.4.1",
 	"description": "The Loopback inbox as React components: read and answer what agents ask, live, inside your own app.",
 	"homepage": "https://github.com/LoopBackTools/loopback/tree/main/packages/inbox#readme",
 	"license": "MIT",
