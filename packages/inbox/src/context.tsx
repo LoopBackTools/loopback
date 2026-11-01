@@ -1,5 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import { initialInbox, type InboxState, type LoopbackApi } from "@loopbacktools/sdk";
+import { initialInbox, type InboxState, type LoopbackApi, type Update } from "@loopbacktools/sdk";
 import { AsyncResult } from "effect/reactivity";
 import {
 	type ComponentProps,
@@ -9,7 +9,7 @@ import {
 	use,
 	useEffect,
 } from "react";
-import { inboxAtom } from "./state.ts";
+import { inboxAtom, updateAtom } from "./state.ts";
 
 const ClientContext = createContext<LoopbackApi | null>(null);
 
@@ -37,6 +37,10 @@ export const useClient = (): LoopbackApi => {
 /** The inbox as it stands, kept live while anything renders it. */
 export const useInbox = (): InboxState =>
 	AsyncResult.getOrElse(useAtomValue(inboxAtom(useClient())), () => initialInbox);
+
+/** Whether Loopback has been updated under the page. */
+export const useUpdate = (): Update =>
+	AsyncResult.getOrElse(useAtomValue(updateAtom(useClient())), () => "none" as const);
 
 /** Where the inbox moves between asks: in the host's own routes, or anywhere else it likes. */
 export interface InboxNavigation {

@@ -1,6 +1,6 @@
 # Versioned messages between Loopback's parts
 
-**Status:** proposal, not built.
+**Status:** built through step 5 of the order of work below; the 0.4.0 release is next.
 
 For a while after every deploy, the parts of a Loopback deployment run different versions of the
 code. Anything a deploy changes can then reach a part that doesn't understand it. This note is how
@@ -84,15 +84,31 @@ logic changes as well as shapes. A tab only has to read the messages.
   not be retried; an `Outdated` refusal means nothing ran, so every operation is safe to try again.
 - A space whose build is newer than its caller's carries on: a Worker isolate still finishing on the
   old code. It accepts every older revision and upgrades the arguments.
-- **Each operation decodes its arguments** against an input schema before running. A call naming a
-  revision newer than the space reads is refused with a retryable error, never run.
+- **A call writing a later revision than the space reads is refused as `Outdated` too,** and the
+  space restarts, so a mismatch is caught even where no version metadata is bound.
+- **Each operation decodes its arguments** with the generated schemas before running
+  (`space/arguments.ts`). Arguments that don't decode, or that decode to an `unknown` member, are a
+  fault in the caller: the call dies unread, and nothing is kept. The compiler checks that every
+  operation has a schema and that none refuses what its operation accepts.
 
 ### 2. Space and server → inbox
 
-- The first socket frame, the snapshot, carries the server's revision and build. Every REST response
-  carries them as `Loopback-Revision` and `Loopback-Build` headers.
-- **A tab on an older revision reloads.** Drafts are already in `localStorage`, so nothing is lost.
-  A tab on the same revision but an older build may offer a reload, without forcing one.
+- **Every REST response carries the server's revision and build,** as the `Loopback-Revision` and
+  `Loopback-Build` headers, refusals and 404s included.
+- **Every socket connection begins with one:** the SDK fetches a one-time ticket before each connect
+  and reconnect, so it hears the server's version every time it connects. The snapshot frame is left
+  as it is. Putting the version in it would have changed the frame's shape, a second revision of the
+  contract made only to carry what the headers already do.
+- **A socket accepted by other code is closed, not sent frames.** Each socket keeps the revision and
+  build that accepted it as its attachment, through hibernation. A space woken on new code closes
+  any socket another build accepted with `1012` the next time it broadcasts, instead of sending it
+  frames its page may not read. The inbox reconnects, and its ticket says the server is newer.
+- **The SDK's `update`** is `none`, `available` once a later build of the same revision answers, or
+  `required` once a later revision answers or the server refuses the client as newer. It never goes
+  back.
+- **A tab on an older revision reloads,** at a moment that loses nothing: question and review notes
+  are kept in `localStorage` as briefing drafts are. A tab on the same revision but an older build
+  offers a reload, without forcing one.
 - **The SDK decodes every frame and response** with schemas generated from the contract. Each union a
   release can grow (kinds of ask, reply outcomes, content blocks, event types) gets an `unknown`
   member. The SDK's types include it, so a frontend's exhaustive `switch` has to handle it, and the
@@ -107,10 +123,14 @@ logic changes as well as shapes. A tab only has to read the messages.
 
 ### 4. Stored asks
 
-- Asks and their entries gain a `revision` column. Existing rows are revision 1.
+- Asks and their entries gain a `revision` column. Existing rows are revision 1. Every write stamps
+  the current revision, and an ask's is the newest any of it was written at, its thread included.
 - Reading decodes a row at its revision and upgrades it.
-- **A row newer than the code reading it** (after a rollback) is shown as "can't be shown" and left
-  alone. Older code never rewrites it.
+- **A row newer than the code reading it** (after a rollback) is left out of every list and found by
+  no lookup, so no operation can rewrite it. It comes back when the code that wrote it does.
+- **A row that doesn't decode is passed over the same way, and logged,** never handed on. An ask
+  whose thread holds an entry that doesn't decode is left out of lists, and an operation on it
+  fails. History pages count the rows they passed over, so one bad row doesn't end the history.
 - Migrations stay forward-only and are applied when a space starts. A change to the tables adds
   columns and never drops or repurposes one in the same release, so older code still runs against a
   migrated table after a rollback.
@@ -202,10 +222,11 @@ release, means no SDK user ever meets that as a breaking change.
 
 1. The checks above. Done.
 2. The contract: today's becomes revision 1, its messages are frozen as examples, and the test that
-   it can't change without a new revision.
-3. Generated Effect schemas, SDK decoding with `unknown` members, and the inbox drawing them.
+   it can't change without a new revision. Done.
+3. Generated Effect schemas, SDK decoding with `unknown` members, and the inbox drawing them. Done.
 4. Revision and build on every crossing, the self-restart, decoding arguments, and the row revision.
-5. The reload signal, and the refusals after a rollback.
+   Done.
+5. The reload signal, and the refusals after a rollback. Done.
 6. Release 0.4.0 to npm.
 
 Each step is tested by making the failure happen first. One test replays the incident itself: a call

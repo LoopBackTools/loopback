@@ -52,6 +52,11 @@ choice, ⌘↵ or Ctrl↵ to send) work from anywhere on the page except your ow
 people's agents ask in the same space, it offers a switch between everyone's asks and the person's
 own agents'.
 
+When Loopback is updated under the page, the inbox says so above the list. A later deploy is offered
+as a reload. A later revision of the contract reloads the page, your app around it included, the next
+time the page is hidden, never under the person. What they have written and not sent, on any kind of
+ask, is kept in the browser's `localStorage` and is there after the reload.
+
 ## Styling
 
 The components are styled with [Kumo](https://www.npmjs.com/package/@cloudflare/kumo) and Tailwind 4

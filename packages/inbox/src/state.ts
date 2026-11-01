@@ -12,6 +12,11 @@ export const inboxAtom = Atom.family((client: LoopbackApi) =>
 	Atom.make(() => client.inbox, { initialValue: initialInbox }),
 );
 
+/** Whether Loopback has been updated under the page a client is in. */
+export const updateAtom = Atom.family((client: LoopbackApi) =>
+	Atom.make(() => client.update, { initialValue: "none" as const }),
+);
+
 /** Who a client is signed in as: the person whose replies read as "you". */
 export const meAtom = Atom.family((client: LoopbackApi) =>
 	Atom.make(

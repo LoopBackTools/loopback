@@ -1,10 +1,13 @@
 import { RegistryProvider } from "@effect/atom-react";
-import type { Actor, Ask, InboxState, LoopbackApi, Reply } from "@loopbacktools/sdk";
+import type { Actor, Ask, InboxState, LoopbackApi, Reply, Update } from "@loopbacktools/sdk";
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Effect, Stream } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Inbox, type InboxNavigation, InboxProvider } from "../src/index.ts";
+import { reloadPage } from "../src/page.ts";
+
+vi.mock("../src/page.ts", () => ({ reloadPage: vi.fn<() => void>() }));
 
 const ADA: Actor = { id: "person-1", name: "Ada" };
 const BEA: Actor = { id: "person-2", name: "Bea" };
@@ -23,7 +26,7 @@ const question = (id: string, text: string, raisedBy?: Actor): Ask => ({
 });
 
 /** A space as a client sees it: its asks, held live, and the replies sent to it. */
-const space = (me: Actor, open: Ask[]) => {
+const space = (me: Actor, open: Ask[], update: Update = "none") => {
 	const replies: { askId: string; reply: Reply }[] = [];
 	const state: InboxState = { status: "live", open, recent: [] };
 	const client: LoopbackApi = {
@@ -39,7 +42,7 @@ const space = (me: Actor, open: Ask[]) => {
 		file: () => Effect.die("unused"),
 		events: Stream.empty,
 		inbox: Stream.make(state).pipe(Stream.concat(Stream.never)),
-		update: Stream.make("none" as const).pipe(Stream.concat(Stream.never)),
+		update: Stream.make(update).pipe(Stream.concat(Stream.never)),
 	};
 	return { client, replies };
 };
@@ -170,5 +173,62 @@ describe("switching spaces", () => {
 			"Globex's ask?",
 		);
 		expect(screen.queryByText("Acme's ask?")).toBeNull();
+	});
+});
+
+describe("an inbox Loopback was updated under", () => {
+	/** The page as the person has it: in view, or behind another tab. */
+	const viewed = (state: DocumentVisibilityState) => {
+		Object.defineProperty(document, "visibilityState", { configurable: true, get: () => state });
+		document.dispatchEvent(new Event("visibilitychange"));
+	};
+
+	afterEach(() => {
+		viewed("visible");
+		vi.mocked(reloadPage).mockClear();
+	});
+
+	it("offers a reload once a later deploy answers, and leaves it to the person", async () => {
+		const user = userEvent.setup();
+		const { client } = space(ADA, [question("q1", "First?", ADA)], "available");
+		show(client, navigation());
+		expect(await screen.findByText("Reload to use the new version.")).toBeInTheDocument();
+		await act(async () => viewed("hidden"));
+		expect(reloadPage).not.toHaveBeenCalled();
+		await user.click(screen.getByRole("button", { name: "Reload" }));
+		expect(reloadPage).toHaveBeenCalledOnce();
+	});
+
+	it("reloads once the page is out of view when a later revision answers, never under the person", async () => {
+		const { client } = space(ADA, [question("q1", "First?", ADA)], "required");
+		show(client, navigation());
+		expect(await screen.findByText(/reloads onto the new version/)).toBeInTheDocument();
+		expect(reloadPage).not.toHaveBeenCalled();
+		await act(async () => viewed("hidden"));
+		expect(reloadPage).toHaveBeenCalledOnce();
+	});
+
+	it("keeps what the person wrote and picked through the reload, until it is sent", async () => {
+		const user = userEvent.setup();
+		const ask = {
+			...question("q1", "Which?", ADA),
+			prompt: { question: "Which?", options: [{ label: "Yes" }, { label: "No" }], multiple: true },
+		} as Ask;
+		const { client, replies } = space(ADA, [ask], "required");
+		const first = show(client, navigation("q1"));
+		await user.click(await screen.findByRole("button", { name: /Yes/ }));
+		await user.type(screen.getByRole("textbox"), "Both, really");
+		first.unmount();
+
+		show(client, navigation("q1"));
+		expect(await screen.findByRole("textbox")).toHaveValue("Both, really");
+		await user.click(screen.getByRole("button", { name: /^Send/ }));
+		await waitFor(() => expect(replies).toHaveLength(1));
+		expect(replies[0]?.reply).toEqual({
+			outcome: "answered",
+			selected: ["Yes"],
+			text: "Both, really",
+		});
+		expect(localStorage.length).toBe(0);
 	});
 });

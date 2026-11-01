@@ -17,6 +17,7 @@ import {
 } from "./hooks.ts";
 import { AskList } from "./list.tsx";
 import { useMe } from "./people.ts";
+import { UpdateBanner } from "./update.tsx";
 
 /** The languages review code is highlighted in; anything else is shown plain. */
 const LANGUAGES = [
@@ -116,69 +117,72 @@ export function Inbox({ selectedId, onSelect, hrefFor }: InboxNavigation) {
 		<NavigationContext value={{ selectedId, onSelect, hrefFor }}>
 			<RootContext value={root}>
 				<ShikiProvider engine="javascript" languages={[...LANGUAGES]}>
-					<div ref={root} className="flex h-full min-h-0 flex-1">
-						<aside
-							style={{ "--sidebar": `${width}px` } as CSSProperties}
-							className={`w-full overflow-y-auto border-r border-kumo-line bg-kumo-base md:block md:w-(--sidebar) md:shrink-0 ${
-								selectedId === null ? "" : "hidden"
-							}`}
-						>
-							{choosing ? (
-								<div className="border-b border-kumo-hairline px-4 py-2">
-									<Tabs
-										size="sm"
-										value={filter}
-										onValueChange={(value) => setFilter(value as Filter)}
-										tabs={[
-											{ value: "all", label: "Everyone's" },
-											{ value: "mine", label: "My agents'" },
-										]}
+					<div ref={root} className="flex h-full min-h-0 flex-1 flex-col">
+						<UpdateBanner />
+						<div className="flex min-h-0 flex-1">
+							<aside
+								style={{ "--sidebar": `${width}px` } as CSSProperties}
+								className={`w-full overflow-y-auto border-r border-kumo-line bg-kumo-base md:block md:w-(--sidebar) md:shrink-0 ${
+									selectedId === null ? "" : "hidden"
+								}`}
+							>
+								{choosing ? (
+									<div className="border-b border-kumo-hairline px-4 py-2">
+										<Tabs
+											size="sm"
+											value={filter}
+											onValueChange={(value) => setFilter(value as Filter)}
+											tabs={[
+												{ value: "all", label: "Everyone's" },
+												{ value: "mine", label: "My agents'" },
+											]}
+										/>
+									</div>
+								) : null}
+								{inbox.status === "connecting" ? (
+									<div className="flex justify-center p-8">
+										<Loader />
+									</div>
+								) : inbox.open.length === 0 && inbox.recent.length === 0 ? (
+									<Empty
+										icon={<Tray size={32} />}
+										title="Nothing yet"
+										description={
+											inbox === everything
+												? "When an agent asks you something, it appears here."
+												: "When one of your agents asks something, it appears here."
+										}
 									/>
-								</div>
-							) : null}
-							{inbox.status === "connecting" ? (
-								<div className="flex justify-center p-8">
-									<Loader />
-								</div>
-							) : inbox.open.length === 0 && inbox.recent.length === 0 ? (
-								<Empty
-									icon={<Tray size={32} />}
-									title="Nothing yet"
-									description={
-										inbox === everything
-											? "When an agent asks you something, it appears here."
-											: "When one of your agents asks something, it appears here."
-									}
-								/>
-							) : (
-								<AskList inbox={inbox} selected={focusId} />
-							)}
-						</aside>
-						<ResizeHandle width={width} onResize={resize} />
-						<main
-							className={`min-w-0 flex-1 overflow-y-auto md:block ${selectedId === null ? "hidden" : ""}`}
-						>
-							{selected !== undefined ? (
-								<AskDetail ask={selected} onReplied={() => advance(selected.id)} />
-							) : selectedId !== null && inbox.status === "live" ? (
-								<Empty
-									title="Not in the inbox"
-									description="This ask is older than the inbox keeps."
-								/>
-							) : (
-								<div className="hidden h-full items-center justify-center md:flex">
-									{allDone ? (
-										<div className="w-full max-w-sm">
-											<Empty
-												icon={<CheckCircle size={32} weight="duotone" />}
-												title="All done"
-												description="Nothing needs you right now."
-											/>
-										</div>
-									) : null}
-								</div>
-							)}
-						</main>
+								) : (
+									<AskList inbox={inbox} selected={focusId} />
+								)}
+							</aside>
+							<ResizeHandle width={width} onResize={resize} />
+							<main
+								className={`min-w-0 flex-1 overflow-y-auto md:block ${selectedId === null ? "hidden" : ""}`}
+							>
+								{selected !== undefined ? (
+									<AskDetail ask={selected} onReplied={() => advance(selected.id)} />
+								) : selectedId !== null && inbox.status === "live" ? (
+									<Empty
+										title="Not in the inbox"
+										description="This ask is older than the inbox keeps."
+									/>
+								) : (
+									<div className="hidden h-full items-center justify-center md:flex">
+										{allDone ? (
+											<div className="w-full max-w-sm">
+												<Empty
+													icon={<CheckCircle size={32} weight="duotone" />}
+													title="All done"
+													description="Nothing needs you right now."
+												/>
+											</div>
+										) : null}
+									</div>
+								)}
+							</main>
+						</div>
 					</div>
 				</ShikiProvider>
 			</RootContext>

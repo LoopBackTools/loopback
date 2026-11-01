@@ -25,6 +25,7 @@ import { Blocks, Prose } from "./content.tsx";
 import { AskLink, useClient, useInboxKeys, useNavigation } from "./context.tsx";
 import { age, SEND_KEY, useNow } from "./hooks.ts";
 import { KindIcon, Waiting } from "./list.tsx";
+import { reloadPage } from "./page.ts";
 import { useMe, whoIs } from "./people.ts";
 import { replyAtom } from "./state.ts";
 import { AgentSaid, PersonSaid } from "./thread.tsx";
@@ -73,11 +74,62 @@ function Turn({ entry, now }: { readonly entry: Entry; readonly now: number }) {
 	return <PersonSaid title={title} body={body} at={entry.at} now={now} />;
 }
 
+/** What the person has written or picked on a question or review, and not sent. */
+interface Note {
+	readonly text: string;
+	readonly picked: readonly string[];
+}
+
+const NO_NOTE: Note = { text: "", picked: [] };
+
+const noteKey = (askId: string) => `loopback.note.${askId}`;
+
+/** A note kept in this browser, read as leniently as another version of this page may have left it. */
+const readNote = (askId: string): Note => {
+	try {
+		const kept = JSON.parse(localStorage.getItem(noteKey(askId)) ?? "null") as {
+			readonly text?: unknown;
+			readonly picked?: unknown;
+		} | null;
+		return {
+			text: typeof kept?.text === "string" ? kept.text : "",
+			picked: Array.isArray(kept?.picked)
+				? kept.picked.filter((label): label is string => typeof label === "string")
+				: [],
+		};
+	} catch {
+		return NO_NOTE;
+	}
+};
+
+/**
+ * Keeps what the person has written or picked on an ask, and not sent, in this browser, as a
+ * briefing's drafts are: a reload onto a newer Loopback, or the agent's next turn, loses none of it.
+ */
+const useNote = (askId: string) => {
+	const [note, setNote] = useState<Note>(() => readNote(askId));
+	const keep = (next: Note) => {
+		setNote(next);
+		try {
+			if (next.text === "" && next.picked.length === 0) localStorage.removeItem(noteKey(askId));
+			else localStorage.setItem(noteKey(askId), JSON.stringify(next));
+		} catch {
+			// Storage can be unavailable (a private window); the note then lasts as long as the page.
+		}
+	};
+	return {
+		...note,
+		setText: (text: string) => keep({ ...note, text }),
+		setPicked: (change: (picked: readonly string[]) => readonly string[]) =>
+			keep({ ...note, picked: change(note.picked) }),
+		clear: () => keep(NO_NOTE),
+	};
+};
+
 /** The reply controls: one box for words, and the moves this kind of ask allows. */
 function ReplyPanel({ ask, onReplied }: { readonly ask: Ask; readonly onReplied: () => void }) {
 	const send = useAtomSet(replyAtom(useClient()), { mode: "promiseExit" });
-	const [text, setText] = useState("");
-	const [picked, setPicked] = useState<readonly string[]>([]);
+	const { text, picked, setText, setPicked, clear } = useNote(ask.id);
 	const [sending, setSending] = useState<string | null>(null);
 	const [error, setError] = useState<{
 		readonly title: string;
@@ -91,8 +143,7 @@ function ReplyPanel({ ask, onReplied }: { readonly ask: Ask; readonly onReplied:
 		const exit = await send({ askId: ask.id, reply });
 		setSending(null);
 		if (Exit.isSuccess(exit)) {
-			setText("");
-			setPicked([]);
+			clear();
 			onReplied();
 			return;
 		}
@@ -370,7 +421,7 @@ function CannotShow({
 						className="w-fit"
 						variant="secondary"
 						icon={<ArrowClockwise />}
-						onClick={() => window.location.reload()}
+						onClick={reloadPage}
 					>
 						Reload
 					</Button>
