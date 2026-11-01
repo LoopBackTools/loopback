@@ -13,6 +13,9 @@ import {
 	type SignedIn,
 	type WorkspaceSummary,
 } from "../src/index.ts";
+import { loadPage } from "../src/location.ts";
+
+vi.mock("../src/location.ts", () => ({ loadPage: vi.fn<(url: string) => void>() }));
 
 const ask = (id: string, question: string): Ask => ({
 	kind: "question",
@@ -73,7 +76,9 @@ const deployment = ({
 	create,
 	agents = "oauth",
 	extensions,
+	continueAt,
 }: {
+	continueAt?: (search: URLSearchParams) => string | undefined;
 	signedIn?: SignedIn | null;
 	workspaces?: WorkspaceSummary[];
 	preferred?: string;
@@ -98,6 +103,7 @@ const deployment = ({
 					Sign in, then go to {next}
 				</button>
 			),
+			...(continueAt === undefined ? {} : { continueAt }),
 		},
 		workspaces: {
 			useList: () => workspaces,
@@ -126,6 +132,7 @@ const here = () => `${window.location.pathname}${window.location.hash}`;
 afterEach(() => {
 	cleanup();
 	localStorage.clear();
+	vi.mocked(loadPage).mockClear();
 });
 
 describe("the app", () => {
@@ -144,6 +151,30 @@ describe("the app", () => {
 		open(deployment({ signedIn: null }).options, "/sign-in?next=//elsewhere.example/steal");
 		await user.click(await screen.findByRole("button", { name: "Sign in, then go to /" }));
 		await waitFor(() => expect(here()).toBe("/w/acme"));
+	});
+
+	it("loads the server's page a sign-in continues to, once signed in, and nowhere else", async () => {
+		const user = userEvent.setup();
+		const authorize = (search: URLSearchParams) =>
+			search.has("client_id") ? `/api/auth/oauth2/authorize?${search}` : undefined;
+		const { options } = deployment({ signedIn: null, continueAt: authorize });
+		open(options, "/sign-in?client_id=agent&sig=signed");
+		await user.click(await screen.findByRole("button", { name: /^Sign in/ }));
+		await waitFor(() =>
+			expect(loadPage).toHaveBeenCalledWith(
+				"/api/auth/oauth2/authorize?client_id=agent&sig=signed",
+			),
+		);
+		expect(loadPage).toHaveBeenCalledOnce();
+		expect(here()).toBe("/sign-in");
+	});
+
+	it("loads it at once for someone already signed in", async () => {
+		const authorize = (search: URLSearchParams) =>
+			search.has("client_id") ? `/api/auth/oauth2/authorize?${search}` : undefined;
+		open(deployment({ continueAt: authorize }).options, "/sign-in?client_id=agent&sig=signed");
+		await waitFor(() => expect(loadPage).toHaveBeenCalledOnce());
+		expect(here()).toBe("/sign-in");
 	});
 
 	it("opens the workspace the person prefers at the front door", async () => {

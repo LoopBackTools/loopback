@@ -25,6 +25,12 @@ export interface Session {
 	 * `next`, the path they were going to.
 	 */
 	readonly SignIn: ComponentType<{ readonly next: string }>;
+	/**
+	 * Where someone at the sign-in page goes once signed in, when it is a page of the server's
+	 * rather than the app's, as an authorization an agent started is. The app loads it in full, in
+	 * place of routing to `next`. Given the sign-in page's query; `undefined` for no such page.
+	 */
+	readonly continueAt?: (search: URLSearchParams) => string | undefined;
 }
 
 /** A workspace someone can open: one Loopback space. */

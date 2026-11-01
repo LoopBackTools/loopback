@@ -28,6 +28,9 @@ const App = createLoopbackApp({
 		},
 		// Shown at /sign-in; once someone is signed in, the app sends them on to `next`.
 		SignIn: ({ next }) => <YourSignIn returnTo={next} />,
+		// Optional: a page of the server's that signing in continues to, loaded in full.
+		continueAt: (search) =>
+			search.has("client_id") ? `/api/auth/oauth2/authorize?${search}` : undefined,
 	},
 	workspaces: {
 		useList: () => useYourWorkspaces(), // [{ id, name }], or undefined while loading
@@ -63,7 +66,9 @@ it keeps them. The app imports no sign-in library; a test keeps it that way.
   `useClient` gives for it. The server's links to asks are of this form.
 - `/w/:workspace/connect`: how to connect an agent. Whether agents sign in with OAuth or send a token
   comes from the server itself.
-- `/sign-in`: the deployment's own sign-in page.
+- `/sign-in`: the deployment's own sign-in page. Once someone is signed in, it sends them on to
+  `next`, a path in the app, or to the page `continueAt` names, loaded in full: an OAuth
+  authorization an agent started, say.
 - `/`: the workspace the person prefers (`usePreferred`), or their first. An old link, `/#/<id>`, is
   followed to that ask.
 - The deployment's pages. They stand alone, without the inbox's header; `Page` and `Section` give

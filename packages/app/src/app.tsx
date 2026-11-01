@@ -20,6 +20,7 @@ import {
 	type ReactNode,
 	use,
 	useCallback,
+	useEffect,
 } from "react";
 import {
 	BrowserRouter,
@@ -33,6 +34,7 @@ import {
 	useSearchParams,
 } from "react-router";
 import { Header } from "./header.tsx";
+import { loadPage } from "./location.ts";
 import { Page, Section } from "./page.tsx";
 import { askInOldLink, safeNext, workspacePath } from "./paths.ts";
 import type { LoopbackAppOptions, SignedIn as Signed } from "./ports.ts";
@@ -136,7 +138,7 @@ const noPreference = (): string | undefined => undefined;
  * The deployment's hooks are bound here, once: the app's pages call the same ones on every render.
  */
 export const createLoopbackApp = (options: LoopbackAppOptions): ComponentType => {
-	const { SignIn } = options.session;
+	const { SignIn, continueAt } = options.session;
 	const useSignedIn = options.session.useSignedIn;
 	const useList = options.workspaces.useList;
 	const usePreferred = options.workspaces.usePreferred ?? noPreference;
@@ -156,12 +158,19 @@ export const createLoopbackApp = (options: LoopbackAppOptions): ComponentType =>
 		return <SignedInContext value={signedIn}>{children}</SignedInContext>;
 	}
 
-	/** The deployment's sign-in page, until the person is signed in; then where they were going. */
+	/**
+	 * The deployment's sign-in page, until the person is signed in; then where they were going: a
+	 * page of the server's the deployment names, loaded in full, or else `next`.
+	 */
 	function SignInPage() {
 		const signedIn = useSignedIn();
 		const [search] = useSearchParams();
 		const next = safeNext(search.get("next"));
-		if (signedIn === undefined) return <Waiting />;
+		const onward = signedIn == null ? undefined : continueAt?.(search);
+		useEffect(() => {
+			if (onward !== undefined) loadPage(onward);
+		}, [onward]);
+		if (signedIn === undefined || onward !== undefined) return <Waiting />;
 		if (signedIn !== null) return <Navigate to={next} replace />;
 		return <SignIn next={next} />;
 	}

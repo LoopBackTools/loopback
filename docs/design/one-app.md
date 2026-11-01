@@ -37,7 +37,8 @@ createLoopbackApp({
 
 - Who is signed in, as the app shows them, while it's loading, or nobody.
 - The sign-in page, as a component the app shows when nobody is signed in. It returns the person to
-  where they were going.
+  where they were going: a path in the app, or a page of the server's the deployment names
+  (`continueAt`), as an OAuth authorization an agent started is, loaded in full.
 - Signing out, when there is something to sign out of.
 
 ### `workspaces`
