@@ -1,7 +1,9 @@
 import { SqliteClient } from "@effect/sql-sqlite-do";
 import type { ServerEvent } from "@loopbacktools/protocol";
+import { REVISION } from "@loopbacktools/protocol/schema";
 import { DurableObject } from "cloudflare:workers";
 import { Effect, Exit, Layer, Logger, ManagedRuntime } from "effect";
+import { readArguments } from "./arguments.ts";
 import { migrations } from "./migrations.ts";
 import { operations, snapshot } from "./operations.ts";
 import {
@@ -13,6 +15,7 @@ import {
 	isLater,
 	type OperationName,
 	Outdated,
+	REVISION_HEADER,
 	type SpaceFailure,
 } from "./rpc.ts";
 import { Host, Presence, Replies } from "./services.ts";
@@ -89,12 +92,20 @@ export class Space extends DurableObject {
 
 	/**
 	 * For a while after a deploy, an active space can go on running the code it started with while a
-	 * newer Worker calls it. Called by newer code, it refuses, running nothing, and restarts onto that
-	 * code a moment later, once the refusal is on its way; whatever reaches it until then is refused
-	 * the same way. A caller retries what was refused. Older code calling a newer space carries on.
+	 * newer Worker calls it. Called by newer code, from a later build or writing a later revision of
+	 * the contract, it refuses, running nothing, and restarts onto that code a moment later, once the
+	 * refusal is on its way; whatever reaches it until then is refused the same way. A caller retries
+	 * what was refused. Older code calling a newer space carries on, as does code from before callers
+	 * named their version, which passes nothing.
 	 */
-	#outdatedFor(build: string | undefined): boolean {
-		if (!this.#restarting && !isLater(build, this.#ownBuild)) return false;
+	#outdatedFor(
+		caller:
+			| { readonly revision?: number | undefined; readonly build?: string | undefined }
+			| undefined,
+	): boolean {
+		const newer =
+			(caller?.revision ?? REVISION) > REVISION || isLater(caller?.build, this.#ownBuild);
+		if (!this.#restarting && !newer) return false;
 		if (!this.#restarting) {
 			this.#restarting = true;
 			setTimeout(
@@ -105,10 +116,12 @@ export class Space extends DurableObject {
 		return true;
 	}
 
-	/** Runs one space operation and answers with its Exit, encoded for the trip back. */
+	/**
+	 * Runs one space operation on the arguments it decodes them to, and answers with its Exit, encoded
+	 * for the trip back.
+	 */
 	async call(method: OperationName, args: readonly unknown[], caller?: Caller): Promise<ExitJson> {
-		// Code from before callers named their version passes nothing: it is older, so carry on.
-		if (this.#outdatedFor(caller?.build)) return encodeExit(Exit.fail(new Outdated()));
+		if (this.#outdatedFor(caller)) return encodeExit(Exit.fail(new Outdated()));
 		if (!Object.hasOwn(operations, method)) {
 			return encodeExit(
 				await Effect.runPromiseExit(Effect.die(new Error(`No operation ${method}`))),
@@ -117,7 +130,11 @@ export class Space extends DurableObject {
 		const operation = operations[method] as (
 			...args: readonly unknown[]
 		) => Effect.Effect<unknown, SpaceFailure, SpaceServices>;
-		return encodeExit(await this.#runtime.runPromiseExit(operation(...args)));
+		return encodeExit(
+			await this.#runtime.runPromiseExit(
+				Effect.flatMap(readArguments(method, args), (read) => operation(...read)),
+			),
+		);
 	}
 
 	/** Accepts an inbox's event socket and sends it the space as it stands. */
@@ -126,7 +143,12 @@ export class Space extends DurableObject {
 			return new Response("Expected a WebSocket upgrade.", { status: 426 });
 		}
 		// The inbox reconnects, by then to the space on the new code.
-		if (this.#outdatedFor(request.headers.get(BUILD_HEADER) ?? undefined)) {
+		const revision = request.headers.get(REVISION_HEADER);
+		const handedBy = {
+			revision: revision === null ? undefined : Number(revision),
+			build: request.headers.get(BUILD_HEADER) ?? undefined,
+		};
+		if (this.#outdatedFor(handedBy)) {
 			return new Response("This space is restarting onto newer code.", {
 				status: 503,
 				headers: { "Retry-After": "1" },

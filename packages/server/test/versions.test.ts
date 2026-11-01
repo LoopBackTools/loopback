@@ -2,7 +2,14 @@ import { REVISION } from "@loopbacktools/protocol/schema";
 import { describe, expect, it } from "@effect/vitest";
 import { env, exports } from "cloudflare:workers";
 import { Effect, Exit } from "effect";
-import { BUILD_HEADER, buildOf, encodeExit, Outdated, spaceClient } from "../src/space/rpc.ts";
+import {
+	BUILD_HEADER,
+	buildOf,
+	encodeExit,
+	Outdated,
+	REVISION_HEADER,
+	spaceClient,
+} from "../src/space/rpc.ts";
 import { caller } from "./caller.ts";
 
 /**
@@ -77,6 +84,35 @@ describe("a space called by newer code", () => {
 	);
 
 	it(
+		"refuses a call writing a later revision of the contract, where there is no build to compare",
+		async () => {
+			const stub = freshSpace();
+			const refused = await stub().call("open", [question("From a later contract?")], {
+				revision: REVISION + 1,
+			});
+			expect(isOutdated(refused)).toBe(true);
+			await restarted();
+			const snapshot = await Effect.runPromise(spaceClient(stub, caller).snapshot());
+			expect(snapshot.open).toEqual([]);
+		},
+		COLD_START,
+	);
+
+	it(
+		"refuses an inbox's socket handed over by a later revision",
+		async () => {
+			const response = await freshSpace()().fetch(
+				new Request("https://space/events", {
+					headers: { Upgrade: "websocket", [REVISION_HEADER]: String(REVISION + 1) },
+				}),
+			);
+			expect(response.status).toBe(503);
+			await restarted();
+		},
+		COLD_START,
+	);
+
+	it(
 		"refuses an inbox's socket, which reconnects",
 		async () => {
 			const response = await freshSpace()().fetch(
@@ -102,6 +138,72 @@ describe("a space called by older code", () => {
 			const unnamed = await stub().call("get", [ask.id], undefined as never);
 			expect(isOutdated(unnamed)).toBe(false);
 		},
+		COLD_START,
+	);
+});
+
+describe("a space reading what it is called with", () => {
+	/** Whether a call died unread: what a space does with arguments it can't read. */
+	const unread = <A, E>(exit: Exit.Exit<A, E>) =>
+		Exit.hasDies(exit) &&
+		exit.cause.reasons.some(
+			(reason) =>
+				reason._tag === "Die" && String(reason.defect).includes("can't read its arguments"),
+		);
+
+	/** A call the space must refuse, typed as the caller never could. */
+	const unchecked = (args: unknown) => args as never;
+
+	it.live(
+		"refuses an ask of a kind it does not know, keeping nothing",
+		() =>
+			Effect.gen(function* () {
+				const space = spaceClient(freshSpace(), caller);
+				const memo = { ...question("A memo?"), kind: "memo" };
+				expect(unread(yield* Effect.exit(space.open(unchecked(memo))))).toBe(true);
+				expect((yield* space.snapshot()).open).toEqual([]);
+			}),
+		COLD_START,
+	);
+
+	it.live(
+		"refuses a review showing a block it does not know",
+		() =>
+			Effect.gen(function* () {
+				const space = spaceClient(freshSpace(), caller);
+				const chart = {
+					actor: OWNER,
+					kind: "review",
+					input: { title: "Revenue", content: [{ type: "chart", series: [1, 2, 3] }] },
+				};
+				expect(unread(yield* Effect.exit(space.open(unchecked(chart))))).toBe(true);
+				expect((yield* space.snapshot()).open).toEqual([]);
+			}),
+		COLD_START,
+	);
+
+	it.live(
+		"refuses a reply with an outcome it does not know, leaving the ask as it was",
+		() =>
+			Effect.gen(function* () {
+				const space = spaceClient(freshSpace(), caller);
+				const ask = yield* space.open(question("Snooze me?"));
+				const snoozed = space.reply(ask.id, unchecked({ outcome: "snoozed" }), OWNER);
+				expect(unread(yield* Effect.exit(snoozed))).toBe(true);
+				expect(yield* space.get(ask.id)).toMatchObject({ status: "awaiting_human", thread: [] });
+			}),
+		COLD_START,
+	);
+
+	it.live(
+		"refuses arguments of the wrong shape",
+		() =>
+			Effect.gen(function* () {
+				const space = spaceClient(freshSpace(), caller);
+				const ask = yield* space.open(question("Wait for me?"));
+				expect(unread(yield* Effect.exit(space.awaitReply(ask.id, unchecked("soon"))))).toBe(true);
+				expect(unread(yield* Effect.exit(space.get(unchecked(7))))).toBe(true);
+			}),
 		COLD_START,
 	);
 });

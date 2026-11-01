@@ -254,6 +254,17 @@ describe("the event socket", () => {
 		expect((await upgrade(`loopback.v1, loopback.ticket.${pass}`)).status).toBe(401);
 	});
 
+	it("names its own version to the space, whatever the request names", async () => {
+		const response = await upgrade("loopback.v1", {
+			Authorization: `Bearer ${TOKEN}`,
+			"Loopback-Revision": "99",
+			"Loopback-Build": "2999-01-01T00:00:00.000Z",
+		});
+		expect(response.status).toBe(101);
+		response.webSocket?.accept();
+		response.webSocket?.close();
+	});
+
 	it("opens for a client that sends the token as a header", async () => {
 		const response = await upgrade("loopback.v1", { Authorization: `Bearer ${TOKEN}` });
 		expect(response.status).toBe(101);
