@@ -60,6 +60,7 @@ catalog:
   tailwindcss: 4.3.3
   "@tailwindcss/vite": 4.3.3
   react-markdown: 10.1.0
+  react-router: 8.3.0
   remark-gfm: 4.0.1
   vite: 8.3.5
   "@vitejs/plugin-react": 6.1.2

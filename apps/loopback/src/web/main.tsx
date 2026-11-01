@@ -1,9 +1,9 @@
 import { RegistryProvider } from "@effect/atom-react";
+import { followSystemTheme } from "@loopbacktools/app";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { App } from "./App.tsx";
+import { App } from "./app.ts";
 import "./styles.css";
-import { followSystemTheme } from "./theme.ts";
 
 followSystemTheme();
 

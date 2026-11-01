@@ -281,3 +281,20 @@ describe("an update to Loopback under the client", () => {
 		following();
 	});
 });
+
+describe("how agents sign in", () => {
+	it("is with OAuth where the MCP endpoint's protected resource metadata is served", async () => {
+		const { fetch } = recording({
+			"GET /.well-known/oauth-protected-resource/mcp": () =>
+				Response.json({ resource: "https://lb.test/mcp", authorization_servers: [] }),
+		});
+		const client = createLoopbackClient({ baseUrl: "https://lb.test", fetch });
+		expect(await client.agentSignIn()).toBe("oauth");
+	});
+
+	it("is with the token where it isn't", async () => {
+		const { fetch } = recording({});
+		const client = createLoopbackClient({ baseUrl: "https://lb.test", fetch });
+		expect(await client.agentSignIn()).toBe("token");
+	});
+});

@@ -74,9 +74,9 @@ export interface InboxLink {
 	readonly askId?: string;
 }
 
-/** The inbox this Worker serves itself: one per deployment, with the ask in the fragment. */
-export const defaultInboxUrl = ({ origin, askId }: InboxLink): string =>
-	askId === undefined ? `${origin}/` : `${origin}/#/${encodeURIComponent(askId)}`;
+/** The inbox this Worker serves itself, as `@loopbacktools/app` routes it: the space's, or one ask in it. */
+export const defaultInboxUrl = ({ origin, space, askId }: InboxLink): string =>
+	`${origin}/w/${encodeURIComponent(space)}${askId === undefined ? "" : `/asks/${encodeURIComponent(askId)}`}`;
 
 /** What the factory needs about the request it is building a server for. */
 interface McpCaller {

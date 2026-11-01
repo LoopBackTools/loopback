@@ -1,6 +1,9 @@
+import { useAtomSet, useAtomValue } from "@effect/atom-react";
+import type { Session, Workspaces } from "@loopbacktools/app";
 import { make, type LoopbackApi } from "@loopbacktools/sdk";
 import { Effect } from "effect";
 import { AsyncResult, Atom } from "effect/reactivity";
+import { SignIn } from "./sign-in.tsx";
 
 const TOKEN_KEY = "loopback.token";
 
@@ -36,30 +39,55 @@ export const tokenAtom = Atom.keepAlive(
 	),
 );
 
-const clientFor = (token: string): LoopbackApi => make({ baseUrl: location.origin, token });
-
-/** A client that sends no credential, for a page whose host already signs its requests in. */
-const hostedClient = (): LoopbackApi => make({ baseUrl: location.origin });
+/** A client with the token, or with none, for a page whose host already signs its requests in. */
+const clientFor = (token: string | null): LoopbackApi =>
+	make({ baseUrl: location.origin, ...(token === null ? {} : { token }) });
 
 /**
- * Whether the page's host already signs requests in, as a Worker vouching for its callers does: then
- * no token is needed. Asked only while no token is held.
+ * What signs this page in, and the space it opens: the token it holds, or else its host, as a Worker
+ * vouching for its callers does. `null` when neither is accepted.
  */
-export const hostedAtom = Atom.make(
-	Effect.suspend(() => hostedClient().whoami).pipe(
-		Effect.as(true),
-		Effect.catch(() => Effect.succeed(false)),
-	),
-);
-
-/** The client for the current token, or for the host's session when it has signed the person in. */
-export const clientAtom = Atom.readable((get): LoopbackApi | null => {
+export const sessionAtom = Atom.make((get) => {
 	const token = get(tokenAtom);
-	if (token !== null) return clientFor(token);
-	return AsyncResult.getOrElse(get(hostedAtom), () => false) ? hostedClient() : null;
+	const client = clientFor(token);
+	return client.whoami.pipe(
+		Effect.map((whoami) => ({ token, client, space: whoami.space })),
+		Effect.catch(() => Effect.succeed(null)),
+	);
 });
 
 /** Checks a token before keeping it: the space it opens, or why it was refused. */
 export const signInAtom = Atom.fn((token: string) =>
 	Effect.map(clientFor(token).whoami, (whoami) => ({ token, space: whoami.space })),
 );
+
+/** The page's session: `undefined` until it is known, `null` when nothing signs the page in. */
+const useCurrent = () => {
+	const current = useAtomValue(sessionAtom);
+	return AsyncResult.isSuccess(current) ? current.value : undefined;
+};
+
+/** Signed in with the token pasted on the sign-in page, or by the page's host. */
+export const session: Session = {
+	useSignedIn: () => {
+		const current = useCurrent();
+		const setToken = useAtomSet(tokenAtom);
+		if (current == null) return current;
+		// A page its host signs in has nothing here to sign out of.
+		return current.token === null ? {} : { signOut: () => setToken(null) };
+	},
+	SignIn,
+};
+
+/** The one space the page's credential opens. */
+export const workspaces: Workspaces = {
+	useList: () => {
+		const current = useCurrent();
+		return current == null ? undefined : [{ id: current.space, name: "Inbox" }];
+	},
+	useClient: () => {
+		const current = useCurrent();
+		if (current == null) throw new Error("The inbox opened before the page was signed in.");
+		return current.client;
+	},
+};

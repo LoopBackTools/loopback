@@ -467,10 +467,10 @@ describe.each<Era>(["legacy", "auto"])("the MCP endpoint (%s negotiation)", (mod
 	it("gives the address of the inbox, or of one ask in it", async () => {
 		const client = await connect();
 		const inbox = await client.callTool({ name: "open_inbox", arguments: {} });
-		expect(inbox.structuredContent).toEqual({ url: `${ORIGIN}/` });
+		expect(inbox.structuredContent).toEqual({ url: `${ORIGIN}/w/default` });
 		const one = await client.callTool({ name: "open_inbox", arguments: { askId: "a b" } });
-		expect(one.structuredContent).toEqual({ url: `${ORIGIN}/#/a%20b` });
-		expect(textOf(one)).toContain(`${ORIGIN}/#/a%20b`);
+		expect(one.structuredContent).toEqual({ url: `${ORIGIN}/w/default/asks/a%20b` });
+		expect(textOf(one)).toContain(`${ORIGIN}/w/default/asks/a%20b`);
 		await client.close();
 	});
 

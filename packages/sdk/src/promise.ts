@@ -26,6 +26,8 @@ export interface LoopbackPromiseClient {
 	}) => Promise<AskPage>;
 	readonly reply: (id: string, reply: ReplyBody) => Promise<Ask>;
 	readonly file: (uploadId: string) => Promise<Blob>;
+	/** How an agent signs in to this deployment's MCP endpoint: see `LoopbackApi`. */
+	readonly agentSignIn: () => Promise<"oauth" | "token">;
 	readonly inbox: InboxStore;
 	/** Whether Loopback has been updated under this client: see `Update`. */
 	readonly update: Store<Update>;
@@ -81,6 +83,7 @@ export const createLoopbackClient = (config: LoopbackConfig): LoopbackPromiseCli
 		history: (page) => settle(api.history(page)),
 		reply: (id, reply) => settle(api.reply(id, reply)),
 		file: (uploadId) => settle(api.file(uploadId)),
+		agentSignIn: () => settle(api.agentSignIn),
 		inbox,
 		update,
 	};

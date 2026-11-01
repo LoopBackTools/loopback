@@ -93,6 +93,12 @@ export interface LoopbackApi {
 	readonly reply: (id: string, reply: ReplyBody) => Effect.Effect<Ask, ApiError>;
 	/** An uploaded image, for showing in a review. */
 	readonly file: (uploadId: string) => Effect.Effect<Blob, ApiError>;
+	/**
+	 * How an agent signs in to this deployment's MCP endpoint, `/mcp`: with OAuth, as behind a login,
+	 * or with the deployment's token. The server says which by serving the endpoint's protected
+	 * resource metadata only when it is OAuth.
+	 */
+	readonly agentSignIn: Effect.Effect<"oauth" | "token", ApiError>;
 	/** The event socket's frames, reconnecting for as long as the stream runs. */
 	readonly events: Stream.Stream<InboxEvent>;
 	/** The inbox, kept current from `events`: one state per change. */
@@ -270,6 +276,29 @@ export const make = (config: LoopbackConfig): LoopbackApi => {
 			Effect.flatMap(request(`/files/${encodeURIComponent(uploadId)}`), (response) =>
 				Effect.tryPromise({ try: () => response.blob(), catch: unreadable(response) }),
 			),
+		agentSignIn: Effect.tryPromise({
+			try: (signal) => fetcher(`${base}/.well-known/oauth-protected-resource/mcp`, { signal }),
+			catch: (error) =>
+				new ApiError({
+					status: 0,
+					code: "network",
+					message: error instanceof Error ? error.message : String(error),
+				}),
+		}).pipe(
+			Effect.flatMap((response) =>
+				response.ok
+					? Effect.succeed("oauth" as const)
+					: response.status === 404
+						? Effect.succeed("token" as const)
+						: Effect.fail(
+								new ApiError({
+									status: response.status,
+									code: "unknown",
+									message: `Loopback answered ${response.status} asked how agents sign in.`,
+								}),
+							),
+			),
+		),
 		events,
 		inbox: events.pipe(Stream.scan(() => initialInbox, applyEvent)),
 		update: SubscriptionRef.changes(updates).pipe(Stream.changes),

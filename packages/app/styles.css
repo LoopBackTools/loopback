@@ -1,0 +1,5 @@
+/*
+ * The app's styles. Import this after Tailwind and Kumo's theme, beside the inbox's: it has Tailwind
+ * generate the utilities the app's own pages use.
+ */
+@source "./src";

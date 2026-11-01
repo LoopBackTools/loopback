@@ -1,6 +1,6 @@
 # One inbox app for every deployment
 
-**Status:** proposal, not built.
+**Status:** built: `@loopbacktools/app`, with `apps/loopback` composed on it. Hosts move onto it next.
 
 The inbox components are already one package, `@loopbacktools/inbox`, and every deployment renders the
 same asks. What isn't shared is the app around them: the header, the connection status, the
@@ -44,20 +44,23 @@ createLoopbackApp({
 
 - The workspaces the person can open, each an id and a name. Each is a Loopback space; the
   server's `spaces` option already serves several.
-- A client for one workspace: an SDK client whose token is minted for it.
+- A client for one workspace: an SDK client whose token is minted for it. A hook, `useClient`,
+  since a deployment may hold its client in its own state, as the self-host does.
 - Optionally, making a new one.
 
 The switcher appears only when there's more than one workspace, or a way to make one.
 
 ### `extensions`
 
-- Pages of the deployment's own, each a path, a component, whether it needs someone signed in, and
-  whether it sits inside the app's header or stands alone (a sign-in or consent screen does).
+- Pages of the deployment's own, each a path, a component, and whether it needs someone signed in.
+  They stand alone, without the inbox's header, as every page a host has today does; `Page` and
+  `Section` give them the app's look. They render inside the app, so they share its providers.
 - Items for the workspace menu and the account menu.
 - Banners above the inbox.
 
 The app's own pages are the inbox (`/w/:workspace` and `/w/:workspace/asks/:id`) and connecting an
-agent (`/w/:workspace/connect`).
+agent (`/w/:workspace/connect`). How agents sign in, with OAuth or a token, is not a setting: the
+SDK asks the server, which serves the MCP endpoint's protected resource metadata only for OAuth.
 
 ## What each deployment supplies
 
@@ -93,12 +96,16 @@ the only workspace, so links already in agents' transcripts keep working.
 Alongside the versioning work, released with it in 0.4.0, the first npm release:
 
 1. `@loopbacktools/app` with the interfaces, the shell moved out of `apps/loopback`, path routing,
-   and the old links followed. Tested with fake adapters.
-2. `apps/loopback` becomes its entry file and its token adapters.
+   and the old links followed. Tested with fake adapters. Done.
+2. `apps/loopback` becomes its entry file and its token adapters. Done.
 3. The reload signal and "can't be shown" built into the app, when versioning's steps 3 to 5 land.
+   Done: both live in the inbox, so every deployment has them through the app.
 4. Hosts move onto it.
 
-## To settle while building
+## Settled while building
 
-- Whether the app takes its theme, brand and favicon from the deployment.
-- How an extension page that stands alone shares the app's providers.
+- The theme follows the system (`followSystemTheme`), and the favicon is the deployment's own
+  `/favicon.svg`. Brand beyond that waits for a deployment that needs it.
+- An extension page shares the app's providers by rendering inside the app.
+- The deployment keeps the `RegistryProvider` in its own entry, as the inbox already asks, so it
+  can seed atoms of its own.

@@ -1,0 +1,74 @@
+{
+	"name": "@loopbacktools/app",
+	"version": "0.3.0",
+	"description": "The Loopback app: the inbox, routed, with its header and pages, for a deployment to compose with its own sign-in and workspaces.",
+	"homepage": "https://github.com/LoopBackTools/loopback/tree/main/packages/app#readme",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/LoopBackTools/loopback.git",
+		"directory": "packages/app"
+	},
+	"files": [
+		"dist",
+		"src",
+		"styles.css"
+	],
+	"type": "module",
+	"sideEffects": [
+		"*.css"
+	],
+	"exports": {
+		".": "./src/index.ts",
+		"./styles.css": "./styles.css"
+	},
+	"publishConfig": {
+		"exports": {
+			".": {
+				"types": "./dist/src/index.d.ts",
+				"default": "./dist/src/index.js"
+			},
+			"./styles.css": "./styles.css"
+		},
+		"access": "public"
+	},
+	"scripts": {
+		"typecheck": "tsc --noEmit",
+		"test": "vitest run",
+		"build": "tsc -p tsconfig.build.json"
+	},
+	"dependencies": {
+		"@phosphor-icons/react": "catalog:"
+	},
+	"devDependencies": {
+		"@cloudflare/kumo": "catalog:",
+		"@effect/atom-react": "catalog:",
+		"@loopbacktools/inbox": "workspace:*",
+		"@loopbacktools/sdk": "workspace:*",
+		"@testing-library/jest-dom": "catalog:",
+		"@testing-library/react": "catalog:",
+		"@testing-library/user-event": "catalog:",
+		"@types/react": "catalog:",
+		"@types/react-dom": "catalog:",
+		"@vitejs/plugin-react": "catalog:",
+		"effect": "catalog:",
+		"es-module-lexer": "catalog:",
+		"jsdom": "catalog:",
+		"react": "catalog:",
+		"react-dom": "catalog:",
+		"react-router": "catalog:",
+		"typescript": "catalog:",
+		"vite": "catalog:",
+		"vitest": "catalog:"
+	},
+	"peerDependencies": {
+		"@cloudflare/kumo": "^2.15.0",
+		"@effect/atom-react": "^4.0.6",
+		"@loopbacktools/inbox": "workspace:^",
+		"@loopbacktools/sdk": "workspace:^",
+		"effect": "^4.0.6",
+		"react": "^19.2.0",
+		"react-dom": "^19.2.0",
+		"react-router": "^8.3.0"
+	}
+}

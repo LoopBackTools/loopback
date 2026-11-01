@@ -132,8 +132,10 @@ through a REST API and an event socket. Images go to R2.
 
 ## Build your own inbox
 
-The web inbox is published as React components, [`@loopbacktools/inbox`](packages/inbox/README.md), to
-render inside an app of your own: it reads and answers through the client you hand it, and moves
+The whole web app is published as [`@loopbacktools/app`](packages/app/README.md): compose it with your
+own sign-in and workspaces, and it brings the inbox, its header, routing and the page on connecting
+agents. The inbox alone is published as React components, [`@loopbacktools/inbox`](packages/inbox/README.md),
+to render inside an app of your own: it reads and answers through the client you hand it, and moves
 between asks through your routes. It is built only on `@loopbacktools/sdk`, a client for the REST
 calls, the live event socket and the inbox state, with a promise API for any framework and an
 Effect service, which [`packages/sdk`](packages/sdk/README.md) explains. The API is also described
@@ -163,7 +165,8 @@ pnpm generate         # regenerate the API from its TypeSpec definition
 | `packages/server`          | The server: Durable Object, HTTP API, event socket and MCP tools, written in Effect.          |
 | `packages/sdk`             | A client for building your own inbox, in any framework.                                       |
 | `packages/inbox`           | The web inbox as React components, built on the SDK.                                          |
-| `apps/loopback`            | The deployable Worker, and the inbox page it serves: sign-in, header and routing.             |
+| `packages/app`             | The web app around the inbox, for a deployment to compose with its own sign-in.               |
+| `apps/loopback`            | The deployable Worker, and the app it serves, signed in with the deployment's token.          |
 | `integrations/claude-code` | The Claude Code plugin.                                                                       |
 
 ## Contributing

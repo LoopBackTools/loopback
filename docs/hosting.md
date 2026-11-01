@@ -76,11 +76,10 @@ claude mcp add --transport http loopback https://loopback.example.com/mcp
 
 then sign in with `/mcp` in Claude Code.
 
-The inbox page this repository deploys signs in with a pasted credential, which suits the token
-gate. Behind a login, render the inbox in your own app with
-[`@loopbacktools/inbox`](../packages/inbox/README.md), handing it a client from
-[`@loopbacktools/sdk`](../packages/sdk/README.md) whose `token` is a function that returns a fresh JWT;
-the SDK calls it for every request.
+The app this repository deploys signs in with a pasted credential, which suits the token gate.
+Behind a login, compose [`@loopbacktools/app`](../packages/app/README.md) with your own sign-in and
+workspaces, giving each workspace a client from [`@loopbacktools/sdk`](../packages/sdk/README.md)
+whose `token` is a function that returns a fresh JWT; the SDK calls it for every request.
 
 ## Compose Loopback in your own Worker
 

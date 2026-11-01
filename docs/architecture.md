@@ -137,7 +137,9 @@ headers may instead send `Authorization` with the upgrade.
 `@loopbacktools/sdk` wraps the REST calls and the socket, reconnects with backoff, and folds events
 into an inbox state with a pure reducer. The web inbox, `@loopbacktools/inbox`, is built only on it: its
 state is kept per client, so handing it another client follows another space, and which ask is
-open is the host's to keep. `apps/loopback` serves it with a token sign-in and fragment routing.
+open is the host's to keep. `@loopbacktools/app` is the app around it, routed by path, which every
+deployment composes with its own sign-in and workspaces; `apps/loopback` composes it with a token
+sign-in.
 
 ## Images
 

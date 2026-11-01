@@ -40,6 +40,7 @@ const space = (me: Actor, open: Ask[], update: Update = "none") => {
 				return { ...open.find((ask) => ask.id === askId)!, status: "closed" as const };
 			}),
 		file: () => Effect.die("unused"),
+		agentSignIn: Effect.die("unused"),
 		events: Stream.empty,
 		inbox: Stream.make(state).pipe(Stream.concat(Stream.never)),
 		update: Stream.make(update).pipe(Stream.concat(Stream.never)),
