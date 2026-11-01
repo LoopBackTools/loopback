@@ -13,6 +13,11 @@ using Versioning;
  *
  * An agent asks over MCP; a person answers through this API, usually from the web inbox. Live updates
  * arrive over the WebSocket at `/api/v1/events`, which sends a `SnapshotEvent` and then `AskEvent`s.
+ *
+ * Every response names the code that answered: `Loopback-Revision`, the revision of this contract the
+ * server writes, and `Loopback-Build`, when the deploy it is from was made. A client that names the
+ * revision it writes in `Loopback-Revision` on its requests learns when the server is newer than
+ * itself, and is refused with `409` and the code `reload` when it is the newer, as after a rollback.
  */
 @versioned(Revisions)
 @service(#{ title: "Loopback" })

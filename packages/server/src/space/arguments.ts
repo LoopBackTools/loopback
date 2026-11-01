@@ -1,6 +1,7 @@
 import * as Contract from "@loopbacktools/protocol/schema";
-import { Effect, Schema } from "effect";
+import { Effect, Result, Schema } from "effect";
 import type { Operations } from "./operations.ts";
+import { read } from "./read.ts";
 
 /**
  * What each space operation takes, as the space decodes it before running anything: the contract's
@@ -57,25 +58,6 @@ const everyOperationRead: [Narrower] extends [never] ? true : Narrower = true;
 void everyOperationRead;
 
 /**
- * What a decoded message holds that this code can't read, if anything: a member of a union from a
- * newer revision of the contract, which the generated schemas decode as `unknown`.
- */
-const unreadable = (value: unknown): string | undefined => {
-	if (typeof value !== "object" || value === null) return undefined;
-	const record = value as Readonly<Record<string, unknown>>;
-	for (const tag of ["kind", "type", "outcome"]) {
-		if (record[tag] === "unknown" && typeof record["was"] === "string") {
-			return `${tag} "${record["was"]}"`;
-		}
-	}
-	for (const inner of Object.values(record)) {
-		const found = unreadable(inner);
-		if (found !== undefined) return found;
-	}
-	return undefined;
-};
-
-/**
  * A call's arguments, decoded for its operation. Arguments that don't decode, or that hold something
  * from a newer revision, are a fault in the caller: the operation never runs on them, and nothing is
  * kept. A caller on a newer revision is refused as `Outdated` before this.
@@ -84,19 +66,7 @@ export const readArguments = <K extends keyof Operations>(
 	method: K,
 	args: readonly unknown[],
 ): Effect.Effect<Parameters<Operations[K]>> =>
-	Schema.decodeUnknownEffect(taking[method] as Schema.Codec<unknown, unknown>)(args).pipe(
-		Effect.mapError(
-			(error) => new Error(`Space.${method} can't read its arguments: ${error.message}`),
-		),
-		Effect.orDie,
-		Effect.flatMap((read) => {
-			const found = unreadable(read);
-			return found === undefined
-				? Effect.succeed(read as Parameters<Operations[K]>)
-				: Effect.die(
-						new Error(
-							`Space.${method} can't read its arguments: they hold ${found}, from a newer revision.`,
-						),
-					);
-		}),
-	);
+	Result.match(read(taking[method] as Schema.Codec<unknown, unknown>, args), {
+		onSuccess: (decoded) => Effect.succeed(decoded as Parameters<Operations[K]>),
+		onFailure: (why) => Effect.die(new Error(`Space.${method} can't read its arguments: ${why}`)),
+	});

@@ -39,6 +39,7 @@ const space = (me: Actor, open: Ask[]) => {
 		file: () => Effect.die("unused"),
 		events: Stream.empty,
 		inbox: Stream.make(state).pipe(Stream.concat(Stream.never)),
+		update: Stream.make("none" as const).pipe(Stream.concat(Stream.never)),
 	};
 	return { client, replies };
 };

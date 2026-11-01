@@ -1,4 +1,10 @@
-import type { Ask, ServerEvent } from "@loopbacktools/protocol";
+import {
+	type Ask,
+	BUILD_HEADER,
+	RELOAD_CODE,
+	REVISION_HEADER,
+	type ServerEvent,
+} from "@loopbacktools/protocol";
 import * as Read from "@loopbacktools/protocol/schema";
 import { describe, expect, it } from "@effect/vitest";
 import { runInDurableObject } from "cloudflare:test";
@@ -8,7 +14,7 @@ import { DEFAULT_SPACE, Gate, TokenGate, WorkerEnv } from "../src/index.ts";
 import packageJson from "../package.json" with { type: "json" };
 import { UploadIncomplete } from "../src/domain/errors.ts";
 import { REPAIR_CONTENTLESS_REVIEWS } from "../src/space/migrations.ts";
-import { spaceClient } from "../src/space/rpc.ts";
+import { buildOf, spaceClient } from "../src/space/rpc.ts";
 import { Files } from "../src/worker/files.ts";
 import { caller } from "./caller.ts";
 
@@ -122,7 +128,7 @@ describe("an invoker that vouches for its caller", () => {
 });
 
 describe("a review a deploy left without content", () => {
-	it("is repaired, so it can be read and dismissed", async () => {
+	it("is left out until it is repaired, then can be read and dismissed", async () => {
 		const ask = await Effect.runPromise(
 			space.open({
 				actor: OWNER,
@@ -142,7 +148,11 @@ describe("a review a deploy left without content", () => {
 				ask.id,
 			);
 		});
-		expect((await api(`/asks/${ask.id}`)).status).toBe(500);
+		// Never handed on as it is, which once failed every snapshot and every look at it.
+		expect((await api(`/asks/${ask.id}`)).status).toBe(404);
+		const snapshot = await api("/snapshot");
+		expect(snapshot.status).toBe(200);
+		expect(JSON.stringify(await snapshot.json())).not.toContain(ask.id);
 		await runInDurableObject(stub, (_object, state) => {
 			state.storage.sql.exec(REPAIR_CONTENTLESS_REVIEWS);
 		});
@@ -219,6 +229,42 @@ describe("asks", () => {
 	});
 });
 
+describe("the version", () => {
+	const later = { [REVISION_HEADER]: String(Read.REVISION + 1) };
+
+	it("is named on every answer, refusals included", async () => {
+		const answers = [
+			await api("/whoami"),
+			await api("/whoami", { token: null }),
+			await api("/nowhere"),
+			await api("/whoami", { headers: later }),
+		];
+		expect(answers.map((answer) => answer.status)).toEqual([200, 401, 404, 409]);
+		for (const answer of answers) {
+			expect(answer.headers.get(REVISION_HEADER)).toBe(String(Read.REVISION));
+			expect(answer.headers.get(BUILD_HEADER)).toBe(buildOf(env));
+		}
+	});
+
+	it("refuses a client writing a later revision, which reloads, before anything runs", async () => {
+		const ask = await Effect.runPromise(question("Reply from the future?"));
+		const refused = await api(`/asks/${ask.id}/reply`, {
+			...json({ outcome: "dismissed" }),
+			headers: { "Content-Type": "application/json", ...later },
+		});
+		expect(refused.status).toBe(409);
+		expect(await refused.json()).toMatchObject({ code: RELOAD_CODE });
+		expect(await Effect.runPromise(space.get(ask.id))).toMatchObject({ status: "awaiting_human" });
+	});
+
+	it("serves a client writing this revision or an earlier one", async () => {
+		for (const revision of [Read.REVISION, Read.REVISION - 1]) {
+			const answer = await api("/whoami", { headers: { [REVISION_HEADER]: String(revision) } });
+			expect(answer.status).toBe(200);
+		}
+	});
+});
+
 describe("the event socket", () => {
 	const upgrade = (protocols: string, headers: Record<string, string> = {}) =>
 		exports.default.fetch(`${BASE}/events`, {
@@ -254,11 +300,10 @@ describe("the event socket", () => {
 		expect((await upgrade(`loopback.v1, loopback.ticket.${pass}`)).status).toBe(401);
 	});
 
-	it("names its own version to the space, whatever the request names", async () => {
+	it("names its own build to the space, whatever the request names", async () => {
 		const response = await upgrade("loopback.v1", {
 			Authorization: `Bearer ${TOKEN}`,
-			"Loopback-Revision": "99",
-			"Loopback-Build": "2999-01-01T00:00:00.000Z",
+			[BUILD_HEADER]: "2999-01-01T00:00:00.000Z",
 		});
 		expect(response.status).toBe(101);
 		response.webSocket?.accept();

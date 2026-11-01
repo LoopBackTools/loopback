@@ -39,7 +39,8 @@ Keep `CF_VERSION_METADATA` in every deployment, under that name (with Wrangler,
 `"version_metadata": { "binding": "CF_VERSION_METADATA" }`). For a while after a deploy, a space can
 go on running the code it started with while the new Worker calls it; with the deploy's version to
 compare, such a space refuses the call and restarts onto the new code, and the Worker tries it again
-([versioned messages](design/versioned-messages.md)).
+([versioned messages](design/versioned-messages.md)). Every API response names the deploy in
+`Loopback-Build`, which is how an open inbox learns that it can reload onto a newer one.
 
 ## What a token must carry
 

@@ -1,14 +1,25 @@
-import type { AskStatus, Entry, ImageType } from "@loopbacktools/protocol";
-import { REVISION } from "@loopbacktools/protocol/schema";
-import { Context, Effect, Layer, Option } from "effect";
+import type {
+	Actor,
+	AskStatus,
+	BriefingPrompt,
+	Entry,
+	ImageType,
+	QuestionPrompt,
+	ReviewPrompt,
+} from "@loopbacktools/protocol";
+import * as Contract from "@loopbacktools/protocol/schema";
+import { Context, Effect, Layer, Option, Result, type Schema } from "effect";
 import { SqlClient } from "effect/sql";
 import type { AskRecord, EntryRecord } from "../domain/ask.ts";
+import { read } from "./read.ts";
+
+const { REVISION } = Contract;
 
 interface AskRow {
 	readonly id: string;
-	readonly kind: AskRecord["kind"];
+	readonly kind: string;
 	readonly key: string;
-	readonly status: AskStatus;
+	readonly status: string;
 	readonly prompt: string;
 	readonly project: string | null;
 	readonly client: string | null;
@@ -25,44 +36,86 @@ interface EntryRow {
 	readonly seq: number;
 	readonly body: string;
 	readonly deliveredAt: string | null;
+	readonly revision: number;
 }
 
-const askOf = (row: AskRow): AskRecord => {
-	const head = {
-		id: row.id,
-		key: row.key,
-		status: row.status,
-		project: row.project,
-		client: row.client,
-		raisedBy: row.raisedBy === null ? null : JSON.parse(row.raisedBy),
-		createdAt: row.createdAt,
-		updatedAt: row.updatedAt,
-		closedAt: row.closedAt,
-		lastWaitedAt: row.lastWaitedAt,
-	};
-	switch (row.kind) {
-		case "question":
-			return { ...head, kind: "question", prompt: JSON.parse(row.prompt) };
-		case "review":
-			return { ...head, kind: "review", prompt: JSON.parse(row.prompt), revises: row.revises };
-		case "briefing":
-			return { ...head, kind: "briefing", prompt: JSON.parse(row.prompt) };
+/** A column holding a message as JSON, decoded. */
+const parsed = <A>(schema: Schema.Codec<A, unknown>, json: string): Result.Result<A, string> => {
+	try {
+		return read(schema, JSON.parse(json));
+	} catch {
+		return Result.fail("it is not JSON");
 	}
 };
 
-const entryOf = (row: EntryRow): EntryRecord => ({
-	askId: row.askId,
-	seq: row.seq,
-	entry: JSON.parse(row.body),
-	deliveredAt: row.deliveredAt,
-});
+/**
+ * A stored ask as this code reads it, or why it can't: what a deploy once left half-written, say.
+ * What `read` hands back holds nothing from a newer revision, so it is what this code writes.
+ */
+const askOf = (row: AskRow): Result.Result<AskRecord, string> =>
+	Result.gen(function* () {
+		const head = {
+			id: row.id,
+			key: row.key,
+			status: (yield* read(Contract.AskStatus, row.status)) as AskStatus,
+			project: row.project,
+			client: row.client,
+			raisedBy:
+				row.raisedBy === null ? null : ((yield* parsed(Contract.Actor, row.raisedBy)) as Actor),
+			createdAt: row.createdAt,
+			updatedAt: row.updatedAt,
+			closedAt: row.closedAt,
+			lastWaitedAt: row.lastWaitedAt,
+		};
+		switch (row.kind) {
+			case "question": {
+				const prompt = yield* parsed(Contract.QuestionPrompt, row.prompt);
+				return { ...head, kind: "question", prompt: prompt as QuestionPrompt } as const;
+			}
+			case "review": {
+				const prompt = yield* parsed(Contract.ReviewPrompt, row.prompt);
+				return {
+					...head,
+					kind: "review",
+					prompt: prompt as ReviewPrompt,
+					revises: row.revises,
+				} as const;
+			}
+			case "briefing": {
+				const prompt = yield* parsed(Contract.BriefingPrompt, row.prompt);
+				return { ...head, kind: "briefing", prompt: prompt as BriefingPrompt } as const;
+			}
+			default:
+				return yield* Result.fail(`it is of the kind "${row.kind}"`);
+		}
+	});
+
+/** A stored thread entry as this code reads it, or why it can't. */
+const entryOf = (row: EntryRow): Result.Result<EntryRecord, string> =>
+	row.revision > REVISION
+		? Result.fail(`it was written at revision ${row.revision}, after this code's`)
+		: Result.map(parsed(Contract.Entry, row.body), (entry) => ({
+				askId: row.askId,
+				seq: row.seq,
+				entry: entry as Entry,
+				deliveredAt: row.deliveredAt,
+			}));
+
+/** A page of closed asks, and where the next one starts. */
+export interface ClosedPage {
+	readonly records: AskRecord[];
+	readonly nextBefore: string | null;
+}
 
 /**
  * Persistence for asks and their threads. Storage failing is a defect, not an error to handle.
  *
  * Every ask and entry is stamped with the revision of the contract it was written at. An ask's is the
  * newest any of it was written at, its thread included, so code reading it knows from that alone
- * whether it can. See docs/design/versioned-messages.md.
+ * whether it can. One from a later revision than this code's, as after a rollback, is never read:
+ * left out of every list and found by no lookup, so nothing here rewrites it. Everything read is
+ * decoded, and a row that doesn't decode is passed over the same way, and logged, rather than
+ * handed on. See docs/design/versioned-messages.md.
  */
 export class AskStore extends Context.Service<
 	AskStore,
@@ -73,7 +126,9 @@ export class AskStore extends Context.Service<
 		readonly insert: (record: AskRecord) => Effect.Effect<void>;
 		readonly setStatus: (id: string, status: AskStatus, at: string) => Effect.Effect<void>;
 		readonly touchWaited: (id: string, at: string) => Effect.Effect<void>;
+		/** An ask's thread. One holding an entry this code can't read is a defect. */
 		readonly thread: (id: string) => Effect.Effect<EntryRecord[]>;
+		/** The threads of several asks, leaving out each ask whose thread this code can't read. */
 		readonly threads: (ids: readonly string[]) => Effect.Effect<Map<string, EntryRecord[]>>;
 		readonly append: (askId: string, entry: Entry) => Effect.Effect<EntryRecord>;
 		/**
@@ -86,8 +141,8 @@ export class AskStore extends Context.Service<
 		readonly markAllDelivered: (askId: string, at: string) => Effect.Effect<void>;
 		/** Every open ask, newest first. */
 		readonly open: Effect.Effect<AskRecord[]>;
-		/** Closed asks, newest first, closed before `before` when given. */
-		readonly closed: (before: string | undefined, limit: number) => Effect.Effect<AskRecord[]>;
+		/** Up to `limit` closed asks, newest first, closed before `before` when given. */
+		readonly closed: (before: string | undefined, limit: number) => Effect.Effect<ClosedPage>;
 		/** Records that an agent stopped following the reply to its turn `afterSeq`. */
 		readonly cancelTask: (askId: string, afterSeq: number, at: string) => Effect.Effect<void>;
 		readonly taskCancelledAt: (
@@ -102,28 +157,56 @@ export class AskStore extends Context.Service<
 		AskStore,
 		Effect.gen(function* () {
 			const sql = yield* SqlClient.SqlClient;
+			/** The asks among `rows` this code can read. */
+			const readable = Effect.fnUntraced(function* (rows: ReadonlyArray<AskRow>) {
+				const records: AskRecord[] = [];
+				for (const row of rows) {
+					const record = askOf(row);
+					if (Result.isSuccess(record)) records.push(record.success);
+					else
+						yield* Effect.logError(
+							`Ask ${row.id} can't be read, so it is left out: ${record.failure}.`,
+						);
+				}
+				return records;
+			});
 			const asks = (statement: Effect.Effect<ReadonlyArray<AskRow>, unknown>) =>
-				statement.pipe(
-					Effect.map((rows) => rows.map(askOf)),
-					Effect.orDie,
-				);
+				statement.pipe(Effect.orDie, Effect.flatMap(readable));
+			// Rows from a later revision are left out by every query, never read.
 			const columns = sql.literal(`
 				id, kind, key, status, prompt, project, client, raised_by AS raisedBy, revises,
 				created_at AS createdAt, updated_at AS updatedAt, closed_at AS closedAt,
 				last_waited_at AS lastWaitedAt
 			`);
-			const entryColumns = sql.literal("ask_id AS askId, seq, body, delivered_at AS deliveredAt");
+			const entryColumns = sql.literal(
+				"ask_id AS askId, seq, body, delivered_at AS deliveredAt, revision",
+			);
+			/** An ask's entries, or a defect when one can't be read: an operation must see its whole thread. */
+			const entries = (askId: string, rows: ReadonlyArray<EntryRow>) =>
+				Effect.forEach(rows, (row) =>
+					Result.match(entryOf(row), {
+						onSuccess: Effect.succeed,
+						onFailure: (why) =>
+							Effect.die(new Error(`Entry ${row.seq} of ask ${askId} can't be read: ${why}.`)),
+					}),
+				);
 			const first = <A>(effect: Effect.Effect<A[]>) =>
 				Effect.map(effect, (rows) => Option.fromNullishOr(rows[0]));
 
 			return AskStore.of({
-				find: (id) => first(asks(sql<AskRow>`SELECT ${columns} FROM asks WHERE id = ${id}`)),
+				find: (id) =>
+					first(
+						asks(
+							sql<AskRow>`SELECT ${columns} FROM asks WHERE id = ${id} AND revision <= ${REVISION}`,
+						),
+					),
 
 				findRetry: (key, since) =>
 					first(
 						asks(sql<AskRow>`
 							SELECT ${columns} FROM asks
 							WHERE key = ${key}
+								AND revision <= ${REVISION}
 								AND last_waited_at >= ${since}
 								AND (
 									status != 'closed'
@@ -175,8 +258,8 @@ export class AskStore extends Context.Service<
 
 				thread: (id) =>
 					sql<EntryRow>`SELECT ${entryColumns} FROM entries WHERE ask_id = ${id} ORDER BY seq`.pipe(
-						Effect.map((rows) => rows.map(entryOf)),
 						Effect.orDie,
+						Effect.flatMap((rows) => entries(id, rows)),
 					),
 
 				// The ids travel as one JSON parameter: SQLite in a Durable Object binds at most 100.
@@ -188,16 +271,26 @@ export class AskStore extends Context.Service<
 								WHERE ask_id IN (SELECT value FROM json_each(${JSON.stringify(ids)}))
 								ORDER BY ask_id, seq
 							`.pipe(
-								Effect.map((rows) => {
-									const byAsk = new Map<string, EntryRecord[]>();
-									for (const row of rows) {
-										const list = byAsk.get(row.askId) ?? [];
-										list.push(entryOf(row));
-										byAsk.set(row.askId, list);
-									}
-									return byAsk;
-								}),
 								Effect.orDie,
+								Effect.flatMap(
+									Effect.fnUntraced(function* (rows) {
+										const byAsk = new Map<string, EntryRecord[]>(ids.map((id) => [id, []]));
+										for (const row of rows) {
+											const thread = byAsk.get(row.askId);
+											if (thread === undefined) continue;
+											const entry = entryOf(row);
+											if (Result.isSuccess(entry)) {
+												thread.push(entry.success);
+											} else {
+												byAsk.delete(row.askId);
+												yield* Effect.logError(
+													`Ask ${row.askId} can't be read, so it is left out: entry ${row.seq} can't, as ${entry.failure}.`,
+												);
+											}
+										}
+										return byAsk;
+									}),
+								),
 							),
 
 				append: (askId, entry) =>
@@ -225,8 +318,9 @@ export class AskStore extends Context.Service<
 						ORDER BY seq
 						LIMIT 1
 					`.pipe(
-						Effect.map((rows) => Option.map(Option.fromNullishOr(rows[0]), entryOf)),
 						Effect.orDie,
+						Effect.flatMap((rows) => entries(askId, rows)),
+						Effect.map((found) => Option.fromNullishOr(found[0])),
 					),
 
 				markDelivered: (askId, seq, at) =>
@@ -241,21 +335,33 @@ export class AskStore extends Context.Service<
 						WHERE ask_id = ${askId} AND author = 'human' AND delivered_at IS NULL
 					`.pipe(Effect.asVoid, Effect.orDie),
 
-				open: asks(
-					sql<AskRow>`SELECT ${columns} FROM asks WHERE status != 'closed' ORDER BY created_at DESC`,
-				),
+				open: asks(sql<AskRow>`
+					SELECT ${columns} FROM asks
+					WHERE status != 'closed' AND revision <= ${REVISION}
+					ORDER BY created_at DESC
+				`),
 
+				// One row past the page says whether there is another, counted before any is left out.
 				closed: (before, limit) =>
-					asks(
-						before === undefined
-							? sql<AskRow>`
-									SELECT ${columns} FROM asks WHERE status = 'closed'
-									ORDER BY closed_at DESC LIMIT ${limit}
-								`
-							: sql<AskRow>`
-									SELECT ${columns} FROM asks WHERE status = 'closed' AND closed_at < ${before}
-									ORDER BY closed_at DESC LIMIT ${limit}
-								`,
+					(before === undefined
+						? sql<AskRow>`
+								SELECT ${columns} FROM asks
+								WHERE status = 'closed' AND revision <= ${REVISION}
+								ORDER BY closed_at DESC LIMIT ${limit + 1}
+							`
+						: sql<AskRow>`
+								SELECT ${columns} FROM asks
+								WHERE status = 'closed' AND revision <= ${REVISION} AND closed_at < ${before}
+								ORDER BY closed_at DESC LIMIT ${limit + 1}
+							`
+					).pipe(
+						Effect.orDie,
+						Effect.flatMap((rows) =>
+							Effect.map(readable(rows.slice(0, limit)), (records) => ({
+								records,
+								nextBefore: rows.length > limit ? (rows[limit - 1]?.closedAt ?? null) : null,
+							})),
+						),
 					),
 
 				cancelTask: (askId, afterSeq, at) =>

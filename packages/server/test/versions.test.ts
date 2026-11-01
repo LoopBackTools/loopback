@@ -3,14 +3,8 @@ import { describe, expect, it } from "@effect/vitest";
 import { runInDurableObject } from "cloudflare:test";
 import { env, exports } from "cloudflare:workers";
 import { Effect, Exit } from "effect";
-import {
-	BUILD_HEADER,
-	buildOf,
-	encodeExit,
-	Outdated,
-	REVISION_HEADER,
-	spaceClient,
-} from "../src/space/rpc.ts";
+import { BUILD_HEADER, REVISION_HEADER } from "@loopbacktools/protocol";
+import { buildOf, encodeExit, Outdated, spaceClient } from "../src/space/rpc.ts";
 import { caller } from "./caller.ts";
 
 /**
@@ -143,6 +137,49 @@ describe("a space called by older code", () => {
 	);
 });
 
+describe("a space's inboxes", () => {
+	/** An inbox's socket onto the space, and the frames and close it hears. */
+	const listen = async (stub: DurableObjectStub) => {
+		const response = await stub.fetch(
+			new Request("https://space/events", { headers: { Upgrade: "websocket" } }),
+		);
+		const socket = response.webSocket;
+		if (socket === null) throw new Error("no socket");
+		const frames: string[] = [];
+		const closed = new Promise<number>((resolve) => {
+			socket.addEventListener("close", (event) => resolve(event.code));
+		});
+		socket.addEventListener("message", (event) => frames.push(String(event.data)));
+		socket.accept();
+		return { socket, frames, closed };
+	};
+
+	it.live(
+		"are closed rather than sent what their page may not read, once other code accepted them",
+		() =>
+			Effect.gen(function* () {
+				const stub = freshSpace();
+				const theirs = yield* Effect.promise(() => listen(stub()));
+				// As if accepted before a deploy, then kept through hibernation.
+				yield* Effect.promise(() =>
+					runInDurableObject(stub(), (_, state) => {
+						for (const older of state.getWebSockets()) {
+							older.serializeAttachment({ revision: REVISION, build: earlier });
+						}
+					}),
+				);
+				const ours = yield* Effect.promise(() => listen(stub()));
+				yield* spaceClient(stub, caller).open(question("Who hears this?"));
+				expect(yield* Effect.promise(() => theirs.closed)).toBe(1012);
+				expect(theirs.frames.some((frame) => frame.includes("ask.opened"))).toBe(false);
+				yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 50)));
+				expect(ours.frames.some((frame) => frame.includes("ask.opened"))).toBe(true);
+				ours.socket.close();
+			}),
+		COLD_START,
+	);
+});
+
 describe("a space reading what it is called with", () => {
 	/** Whether a call died unread: what a space does with arguments it can't read. */
 	const unread = <A, E>(exit: Exit.Exit<A, E>) =>
@@ -228,6 +265,73 @@ describe("a space's stored asks", () => {
 				const stored = yield* Effect.promise(() => revisions(stub()));
 				expect(stored.asks).toEqual([{ id: ask.id, revision: REVISION }]);
 				expect(stored.entries).toEqual([{ ask_id: ask.id, seq: 1, revision: REVISION }]);
+			}),
+		COLD_START,
+	);
+
+	/** Runs SQL against a space's storage, as other code might have left it. */
+	const exec = (stub: DurableObjectStub, query: string, ...bindings: unknown[]) =>
+		Effect.promise(() =>
+			runInDurableObject(stub, (_, state) => state.storage.sql.exec(query, ...bindings).toArray()),
+		);
+
+	it.live(
+		"from a later revision, as after a rollback, are left out, found by nothing, and left as they are",
+		() =>
+			Effect.gen(function* () {
+				const stub = freshSpace();
+				const space = spaceClient(stub, caller);
+				const newer = yield* space.open(question("Written by newer code?"));
+				const ours = yield* space.open(question("Written by this code?"));
+				yield* exec(stub(), "UPDATE asks SET revision = ? WHERE id = ?", REVISION + 1, newer.id);
+				expect((yield* space.snapshot()).open.map((ask) => ask.id)).toEqual([ours.id]);
+				expect(yield* Effect.flip(space.get(newer.id))).toMatchObject({ _tag: "AskNotFound" });
+				const replied = space.reply(newer.id, { outcome: "dismissed" }, OWNER);
+				expect(yield* Effect.flip(replied)).toMatchObject({ _tag: "AskNotFound" });
+				expect(
+					yield* exec(stub(), "SELECT status, revision FROM asks WHERE id = ?", newer.id),
+				).toEqual([{ status: "awaiting_human", revision: REVISION + 1 }]);
+				expect(yield* exec(stub(), "SELECT * FROM entries WHERE ask_id = ?", newer.id)).toEqual([]);
+			}),
+		COLD_START,
+	);
+
+	it.live(
+		"that can't be read are left out of history without ending it",
+		() =>
+			Effect.gen(function* () {
+				const stub = freshSpace();
+				const space = spaceClient(stub, caller);
+				const closed: string[] = [];
+				for (const text of ["First?", "Second?", "Third?"]) {
+					const ask = yield* space.open(question(text));
+					yield* space.reply(ask.id, { outcome: "dismissed" }, OWNER);
+					closed.unshift(ask.id);
+					yield* Effect.sleep("5 millis");
+				}
+				const [third, second, first] = closed;
+				yield* exec(stub(), "UPDATE asks SET prompt = '{}' WHERE id = ?", second);
+				const page = yield* space.history(undefined, 2);
+				expect(page.items.map((ask) => ask.id)).toEqual([third]);
+				expect(page.nextBefore).toBeDefined();
+				const rest = yield* space.history(page.nextBefore, 2);
+				expect(rest.items.map((ask) => ask.id)).toEqual([first]);
+			}),
+		COLD_START,
+	);
+
+	it.live(
+		"whose thread can't be read are left out of the snapshot, which still serves the rest",
+		() =>
+			Effect.gen(function* () {
+				const stub = freshSpace();
+				const space = spaceClient(stub, caller);
+				const broken = yield* space.open(question("Broken thread?"));
+				const fine = yield* space.open(question("Fine thread?"));
+				yield* space.reply(broken.id, { outcome: "dismissed" }, OWNER);
+				yield* exec(stub(), "UPDATE entries SET body = 'not json' WHERE ask_id = ?", broken.id);
+				const snapshot = yield* space.snapshot();
+				expect([...snapshot.open, ...snapshot.recent].map((ask) => ask.id)).toEqual([fine.id]);
 			}),
 		COLD_START,
 	);

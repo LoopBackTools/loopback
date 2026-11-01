@@ -128,13 +128,15 @@ const view = Effect.fnUntraced(function* (record: AskRecord) {
 	return toAsk(record, yield* store.thread(record.id), presence.isWaiting(record.id));
 });
 
+/** The asks in their wire shape, leaving out any whose thread can't be read. */
 const views = Effect.fnUntraced(function* (records: readonly AskRecord[]) {
 	const store = yield* AskStore;
 	const presence = yield* Presence;
 	const threads = yield* store.threads(records.map((record) => record.id));
-	return records.map((record) =>
-		toAsk(record, threads.get(record.id) ?? [], presence.isWaiting(record.id)),
-	);
+	return records.flatMap((record) => {
+		const thread = threads.get(record.id);
+		return thread === undefined ? [] : [toAsk(record, thread, presence.isWaiting(record.id))];
+	});
 });
 
 const announce = Effect.fnUntraced(function* (type: "ask.opened" | "ask.updated", ask: Ask) {
@@ -589,7 +591,7 @@ export const snapshot = Effect.gen(function* () {
 	const store = yield* AskStore;
 	const current: Snapshot = {
 		open: yield* views(yield* store.open),
-		recent: yield* views(yield* store.closed(undefined, RECENT_LIMIT)),
+		recent: yield* views((yield* store.closed(undefined, RECENT_LIMIT)).records),
 	};
 	return current;
 });
@@ -600,10 +602,9 @@ export const history = Effect.fn("Space.history")(function* (
 	limit: number,
 ) {
 	const store = yield* AskStore;
-	const records = yield* store.closed(before, limit + 1);
-	const items = yield* views(records.slice(0, limit));
-	const last = records.length > limit ? records[limit - 1]?.closedAt : null;
-	const page: AskPage = { items, ...(last == null ? {} : { nextBefore: last }) };
+	const { records, nextBefore } = yield* store.closed(before, limit);
+	const items = yield* views(records);
+	const page: AskPage = { items, ...(nextBefore === null ? {} : { nextBefore }) };
 	return page;
 });
 

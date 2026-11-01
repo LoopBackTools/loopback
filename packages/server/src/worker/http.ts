@@ -1,3 +1,5 @@
+import { BUILD_HEADER, RELOAD_CODE, REVISION_HEADER } from "@loopbacktools/protocol";
+import { REVISION } from "@loopbacktools/protocol/schema";
 import { Effect, Option } from "effect";
 import { type Context, Hono } from "hono";
 import { RegExpRouter } from "hono/router/reg-exp-router";
@@ -16,6 +18,7 @@ import {
 	type WorkerServices,
 } from "./run.ts";
 import { UPLOAD_MAX_BYTES } from "../space/operations.ts";
+import { buildOf } from "../space/rpc.ts";
 import { VERSION } from "../version.ts";
 import { type InboxLink, makeMcp } from "./mcp.ts";
 import { Spaces } from "./spaces.ts";
@@ -325,13 +328,32 @@ export const makeApp = (
 		c.set("requestId", c.req.header("cf-ray") ?? crypto.randomUUID());
 		await next();
 	});
-	// Nothing the Worker answers is to be sniffed as another type. A WebSocket's 101 is the space's
-	// own response, and is left as it is.
+	// Nothing the Worker answers is to be sniffed as another type. Everything names the code that
+	// answered, so a client can tell when Loopback has been updated under it. A WebSocket's 101 is the
+	// space's own response, and is left as it is.
 	app.use(async (c, next) => {
 		await next();
 		if (c.res.status === 101) return;
 		c.res.headers.set("X-Content-Type-Options", "nosniff");
 		c.res.headers.set("Referrer-Policy", "no-referrer");
+		c.res.headers.set(REVISION_HEADER, String(REVISION));
+		const build = buildOf(c.env);
+		if (build !== undefined) c.res.headers.set(BUILD_HEADER, build);
+	});
+	// A client writing a later revision of the contract than this code reads is from newer code, as a
+	// page loaded before a rollback is: it is refused before anything runs, and reloads onto this code.
+	app.use(async (c, next) => {
+		if (Number(c.req.header(REVISION_HEADER)) > REVISION) {
+			return c.json(
+				problem(
+					RELOAD_CODE,
+					"This is from a newer version of Loopback than the server. Reload it.",
+				),
+				409,
+			);
+		}
+		await next();
+		return undefined;
 	});
 	app.onError((error, c) => answerUnhandled(error, c.get("requestId")));
 	app.notFound((c) => c.json(problem("not_found", "No such route."), 404));

@@ -1,3 +1,4 @@
 export * from "./generated/requests.gen.ts";
 export * from "./generated/vocabularies.gen.ts";
 export * from "./briefing.ts";
+export * from "./versions.ts";

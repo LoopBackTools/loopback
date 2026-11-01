@@ -31,10 +31,6 @@ export const buildOf = (env: unknown): string | undefined => {
 	return typeof metadata?.timestamp === "string" ? metadata.timestamp : undefined;
 };
 
-/** The headers the Worker names its version in when it hands a space an inbox's WebSocket. */
-export const REVISION_HEADER = "Loopback-Revision";
-export const BUILD_HEADER = "Loopback-Build";
-
 /** Whether a build is from a later deploy than another; unknown when either is. */
 export const isLater = (build: string | undefined, than: string | undefined): boolean =>
 	build !== undefined && than !== undefined && Date.parse(build) > Date.parse(than);

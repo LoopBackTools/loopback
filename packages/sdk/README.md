@@ -86,6 +86,20 @@ function Inbox() {
 `InboxState` holds `status` (`connecting`, `live` or `reconnecting`), `open` (newest first) and
 `recent` (most recently closed first). `awaitingHuman(state)` picks the asks waiting on the person.
 
+### Updates
+
+`loopback.update` is an external store too, saying whether Loopback has been updated under the page,
+as every response tells the client, the one each socket connection begins with included:
+
+- `none`: the page's code is level with the server's.
+- `available`: a later deploy of the same revision of the contract answers. Offer a reload.
+- `required`: the server writes a later revision of the contract than this client reads, or refused
+  the client as newer than itself, as it does after a rollback. Reload: asks may arrive that this
+  page can't draw, and what it sends may be refused.
+
+It never goes back. Reload when it's safe for the person, such as when the page is hidden, rather
+than under someone typing.
+
 ## Effect
 
 ```ts
@@ -104,7 +118,8 @@ program.pipe(
 ```
 
 `events` is the raw stream of socket frames, and `applyEvent` is the reducer `inbox` is built on,
-for anyone keeping their own state.
+for anyone keeping their own state. `update` is the stream of `Update`s, starting with the current
+one.
 
 ## Types
 

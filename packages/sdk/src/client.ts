@@ -1,8 +1,15 @@
-import type { Problem, Reply as ReplyBody } from "@loopbacktools/protocol";
+import {
+	BUILD_HEADER,
+	type Problem,
+	RELOAD_CODE,
+	type Reply as ReplyBody,
+	REVISION_HEADER,
+} from "@loopbacktools/protocol";
 import {
 	Ask,
 	AskPage,
 	EventTicket,
+	REVISION,
 	ServerEvent,
 	Snapshot,
 	Whoami,
@@ -18,6 +25,7 @@ import {
 	Schedule,
 	Schema,
 	Stream,
+	SubscriptionRef,
 } from "effect";
 import { applyEvent, type InboxEvent, type InboxState, initialInbox } from "./inbox.ts";
 
@@ -61,6 +69,17 @@ const RECONNECT = Schedule.min([
 	Schedule.spaced("10 seconds"),
 ]).pipe(Schedule.jittered);
 
+/**
+ * Whether Loopback has been updated under this client, so that reloading the page would bring its
+ * code level with the server's. `available` once a later build of the same revision of the contract
+ * answers: a reload is worth offering. `required` once the server writes a later revision than this
+ * client reads, or refuses this client as from a newer one, as it does after a rollback: what it
+ * sends may no longer be read, nor what it hears drawn. It never goes back.
+ */
+export type Update = "none" | "available" | "required";
+
+const urgency: Readonly<Record<Update, number>> = { none: 0, available: 1, required: 2 };
+
 export interface LoopbackApi {
 	readonly whoami: Effect.Effect<Whoami, ApiError>;
 	/** Every open ask and the most recently closed. */
@@ -78,6 +97,11 @@ export interface LoopbackApi {
 	readonly events: Stream.Stream<InboxEvent>;
 	/** The inbox, kept current from `events`: one state per change. */
 	readonly inbox: Stream.Stream<InboxState>;
+	/**
+	 * Whether Loopback has been updated under this client, as every response says, the one each
+	 * connection of `events` begins with included: the current value, then each change.
+	 */
+	readonly update: Stream.Stream<Update>;
 }
 
 class SocketClosed extends Schema.TaggedError<SocketClosed>()("SocketClosed", {}) {}
@@ -102,6 +126,20 @@ export const make = (config: LoopbackConfig): LoopbackApi => {
 			}),
 	});
 
+	const updates = Effect.runSync(SubscriptionRef.make<Update>("none"));
+	const raise = (to: Update) =>
+		SubscriptionRef.update(updates, (now) => (urgency[to] > urgency[now] ? to : now));
+	/** The build that answered first, which the page is taken to be from. */
+	let firstBuild: string | undefined;
+	/** What a response says of the code that sent it, measured against this client's. */
+	const heard = (response: Response): Update => {
+		if (Number(response.headers.get(REVISION_HEADER)) > REVISION) return "required";
+		const build = response.headers.get(BUILD_HEADER);
+		if (build === null) return "none";
+		firstBuild ??= build;
+		return Date.parse(build) > Date.parse(firstBuild) ? "available" : "none";
+	};
+
 	/** A response body that is not what the contract says it is. */
 	const unreadable = (response: Response) => () =>
 		new ApiError({
@@ -113,6 +151,7 @@ export const make = (config: LoopbackConfig): LoopbackApi => {
 	const request = (path: string, init: RequestInit = {}) =>
 		Effect.gen(function* () {
 			const headers = new Headers(init.headers);
+			headers.set(REVISION_HEADER, String(REVISION));
 			const credential = yield* token;
 			if (credential !== undefined) headers.set("Authorization", `Bearer ${credential}`);
 			const response = yield* Effect.tryPromise({
@@ -124,10 +163,12 @@ export const make = (config: LoopbackConfig): LoopbackApi => {
 						message: error instanceof Error ? error.message : String(error),
 					}),
 			});
+			yield* raise(heard(response));
 			if (response.ok) return response;
 			const problem: Partial<Problem> = yield* Effect.promise(() =>
 				response.json().catch(() => ({})),
 			);
+			if (response.status === 409 && problem.code === RELOAD_CODE) yield* raise("required");
 			return yield* new ApiError({
 				status: response.status,
 				code: problem.code ?? "unknown",
@@ -231,6 +272,7 @@ export const make = (config: LoopbackConfig): LoopbackApi => {
 			),
 		events,
 		inbox: events.pipe(Stream.scan(() => initialInbox, applyEvent)),
+		update: SubscriptionRef.changes(updates).pipe(Stream.changes),
 	};
 };
 

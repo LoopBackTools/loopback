@@ -1,16 +1,19 @@
 import type { Reply as ReplyBody } from "@loopbacktools/protocol";
 import type { Ask, AskPage, Snapshot, Whoami } from "@loopbacktools/protocol/schema";
 import { Cause, Effect, Exit, Fiber, Stream } from "effect";
-import { type ApiError, type LoopbackConfig, make } from "./client.ts";
+import { type ApiError, type LoopbackConfig, make, type Update } from "./client.ts";
 import { type InboxState, initialInbox } from "./inbox.ts";
 
-/** The inbox as an external store: the shape React's `useSyncExternalStore` takes, and any other framework can. */
-export interface InboxStore {
-	/** Starts following the inbox with the first listener and stops after the last leaves. */
+/** A value kept live as an external store: the shape React's `useSyncExternalStore` takes, and any other framework can. */
+export interface Store<A> {
+	/** Starts following the value with the first listener and stops after the last leaves. */
 	readonly subscribe: (listener: () => void) => () => void;
-	/** The current state. The same object until something changes. */
-	readonly getSnapshot: () => InboxState;
+	/** The current value. The same object until something changes. */
+	readonly getSnapshot: () => A;
 }
+
+/** The inbox as an external store. */
+export type InboxStore = Store<InboxState>;
 
 /** The Loopback client for code that does not use Effect: every call is a promise. */
 export interface LoopbackPromiseClient {
@@ -24,6 +27,8 @@ export interface LoopbackPromiseClient {
 	readonly reply: (id: string, reply: ReplyBody) => Promise<Ask>;
 	readonly file: (uploadId: string) => Promise<Blob>;
 	readonly inbox: InboxStore;
+	/** Whether Loopback has been updated under this client: see `Update`. */
+	readonly update: Store<Update>;
 }
 
 /** Runs a call, rejecting with the `ApiError` itself so callers can match on it. */
@@ -33,17 +38,16 @@ const settle = async <A>(effect: Effect.Effect<A, ApiError>): Promise<A> => {
 	throw Cause.squash(exit.cause);
 };
 
-export const createLoopbackClient = (config: LoopbackConfig): LoopbackPromiseClient => {
-	const api = make(config);
+/** A stream followed while anything listens, starting over from `initial` each time it is followed anew. */
+const storeOf = <A>(stream: Stream.Stream<A>, initial: A): Store<A> => {
 	const listeners = new Set<() => void>();
-	let state = initialInbox;
+	let state = initial;
 	let following: Fiber.Fiber<void> | undefined;
-
-	const inbox: InboxStore = {
+	return {
 		subscribe: (listener) => {
 			listeners.add(listener);
 			following ??= Effect.runFork(
-				api.inbox.pipe(
+				stream.pipe(
 					Stream.runForEach((next) =>
 						Effect.sync(() => {
 							state = next;
@@ -57,12 +61,18 @@ export const createLoopbackClient = (config: LoopbackConfig): LoopbackPromiseCli
 				if (listeners.size === 0 && following !== undefined) {
 					Effect.runFork(Fiber.interrupt(following));
 					following = undefined;
-					state = initialInbox;
+					state = initial;
 				}
 			};
 		},
 		getSnapshot: () => state,
 	};
+};
+
+export const createLoopbackClient = (config: LoopbackConfig): LoopbackPromiseClient => {
+	const api = make(config);
+	const inbox = storeOf(api.inbox, initialInbox);
+	const update = storeOf(api.update, "none");
 
 	return {
 		whoami: () => settle(api.whoami),
@@ -72,5 +82,6 @@ export const createLoopbackClient = (config: LoopbackConfig): LoopbackPromiseCli
 		reply: (id, reply) => settle(api.reply(id, reply)),
 		file: (uploadId) => settle(api.file(uploadId)),
 		inbox,
+		update,
 	};
 };

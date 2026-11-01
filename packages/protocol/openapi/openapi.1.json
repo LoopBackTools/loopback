@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Loopback",
-    "description": "Loopback puts what an agent needs from a person in front of them and hands the reply back.\n\nAn agent asks over MCP; a person answers through this API, usually from the web inbox. Live updates\narrive over the WebSocket at `/api/v1/events`, which sends a `SnapshotEvent` and then `AskEvent`s.",
+    "description": "Loopback puts what an agent needs from a person in front of them and hands the reply back.\n\nAn agent asks over MCP; a person answers through this API, usually from the web inbox. Live updates\narrive over the WebSocket at `/api/v1/events`, which sends a `SnapshotEvent` and then `AskEvent`s.\n\nEvery response names the code that answered: `Loopback-Revision`, the revision of this contract the\nserver writes, and `Loopback-Build`, when the deploy it is from was made. A client that names the\nrevision it writes in `Loopback-Revision` on its requests learns when the server is newer than\nitself, and is refused with `409` and the code `reload` when it is the newer, as after a rollback.",
     "version": "1"
   },
   "tags": [],

@@ -22,6 +22,7 @@ export {
 	type LoopbackConfig,
 	make,
 	TICKET_PROTOCOL_PREFIX,
+	type Update,
 } from "./client.ts";
 export {
 	applyEvent,
@@ -31,4 +32,9 @@ export {
 	initialInbox,
 	RECENT_LIMIT,
 } from "./inbox.ts";
-export { createLoopbackClient, type InboxStore, type LoopbackPromiseClient } from "./promise.ts";
+export {
+	createLoopbackClient,
+	type InboxStore,
+	type LoopbackPromiseClient,
+	type Store,
+} from "./promise.ts";

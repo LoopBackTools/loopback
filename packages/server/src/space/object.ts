@@ -1,5 +1,5 @@
 import { SqliteClient } from "@effect/sql-sqlite-do";
-import type { ServerEvent } from "@loopbacktools/protocol";
+import { BUILD_HEADER, REVISION_HEADER, type ServerEvent } from "@loopbacktools/protocol";
 import { REVISION } from "@loopbacktools/protocol/schema";
 import { DurableObject } from "cloudflare:workers";
 import { Effect, Exit, Layer, Logger, ManagedRuntime } from "effect";
@@ -7,7 +7,6 @@ import { readArguments } from "./arguments.ts";
 import { migrations } from "./migrations.ts";
 import { operations, snapshot } from "./operations.ts";
 import {
-	BUILD_HEADER,
 	buildOf,
 	type Caller,
 	encodeExit,
@@ -15,7 +14,6 @@ import {
 	isLater,
 	type OperationName,
 	Outdated,
-	REVISION_HEADER,
 	type SpaceFailure,
 } from "./rpc.ts";
 import { Host, Presence, Replies } from "./services.ts";
@@ -26,6 +24,15 @@ export const EVENTS_PROTOCOL = "loopback.v1";
 
 /** How long a space that has refused newer code waits before restarting: long enough to answer. */
 const RESTART_DELAY_MS = 100;
+
+/** The code that accepted an inbox's socket, kept with it through hibernation. */
+interface AcceptedBy {
+	readonly revision: number;
+	readonly build: string | null;
+}
+
+/** The close code an inbox reconnects after when the space is now on other code: Service Restart. */
+const RECONNECT_ONTO_NEW_CODE = 1012;
 
 type SpaceServices = AskStore | UploadStore | TicketStore | Host | Replies | Presence;
 
@@ -158,6 +165,8 @@ export class Space extends DurableObject {
 		const current = await this.#runtime.runPromise(snapshot);
 		const { 0: client, 1: server } = new WebSocketPair();
 		this.ctx.acceptWebSocket(server);
+		const acceptedBy: AcceptedBy = { revision: REVISION, build: this.#ownBuild ?? null };
+		server.serializeAttachment(acceptedBy);
 		const first: ServerEvent = { type: "snapshot", snapshot: current };
 		server.send(JSON.stringify(first));
 		const offered = (request.headers.get("Sec-WebSocket-Protocol") ?? "")
@@ -178,12 +187,30 @@ export class Space extends DurableObject {
 	 */
 	override async webSocketMessage(): Promise<void> {}
 
+	/**
+	 * Whether a socket was accepted by other code than this. A hibernated socket stays open while its
+	 * space moves onto new code, so an inbox could go on hearing frames its page can't read, and never
+	 * learn that Loopback was updated.
+	 */
+	#acceptedByOther(socket: WebSocket): boolean {
+		const by = socket.deserializeAttachment() as AcceptedBy | null;
+		return by?.revision !== REVISION || by.build !== (this.#ownBuild ?? null);
+	}
+
+	/**
+	 * Sends every inbox the event. One whose socket other code accepted is closed instead: it
+	 * reconnects onto this code, and hears from the server that it is newer.
+	 */
 	#broadcast(event: ServerEvent): Effect.Effect<void> {
 		return Effect.sync(() => {
 			const frame = JSON.stringify(event);
 			for (const socket of this.ctx.getWebSockets()) {
 				try {
-					socket.send(frame);
+					if (this.#acceptedByOther(socket)) {
+						socket.close(RECONNECT_ONTO_NEW_CODE, "Loopback was updated.");
+					} else {
+						socket.send(frame);
+					}
 				} catch {
 					// A socket that is closing misses the frame; it gets a fresh snapshot on reconnect.
 				}

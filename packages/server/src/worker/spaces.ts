@@ -1,15 +1,9 @@
+import { BUILD_HEADER, REVISION_HEADER } from "@loopbacktools/protocol";
 import { REVISION } from "@loopbacktools/protocol/schema";
 import { env as workerEnv, exports } from "cloudflare:workers";
 import { Context, Effect, Layer, Option } from "effect";
 import type { Space } from "../space/object.ts";
-import {
-	BUILD_HEADER,
-	buildOf,
-	type Caller,
-	REVISION_HEADER,
-	type SpaceClient,
-	spaceClient,
-} from "../space/rpc.ts";
+import { buildOf, type Caller, type SpaceClient, spaceClient } from "../space/rpc.ts";
 import type { WorkerBindings } from "./env.ts";
 import { filesOf } from "./files.ts";
 import type { Access } from "./gate.ts";
