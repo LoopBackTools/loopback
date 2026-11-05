@@ -289,7 +289,7 @@ export const questionInputSchema = z.strictObject({
 	options: z.array(choiceSchema).min(2).max(6).exactOptional().describe("Between two and six choices, offered as buttons."),
 	multiple: z.boolean().exactOptional().describe("Whether the person may pick more than one choice."),
 	context: z.string().exactOptional().describe("Background the person needs to answer, as markdown."),
-	project: z.string().min(1).describe("The project you are working in: the name of the folder at the root of its repository (the\nlast part of `git rev-parse --show-toplevel`), or of the working directory outside one. The\nperson works on many projects at once from one inbox; this is how they know who is asking."),
+	project: z.string().min(1).describe("The project you are working in: the name of the folder its repository is checked out in, the\nmain checkout's even from a worktree (the folder holding `git rev-parse --git-common-dir`), or\nof the working directory outside one. The person works on many projects at once from one inbox;\nthis is how they know who is asking."),
 }).describe("A question for the person, with optional choices. They may always answer in their own words. All\nof it together may be at most 256 KiB.");
 export type QuestionInput = z.infer<typeof questionInputSchema>;
 
@@ -298,7 +298,7 @@ export const reviewInputSchema = z.strictObject({
 	content: z.array(blockSchema).min(1).describe("What is being reviewed, in order."),
 	summary: z.string().exactOptional().describe("What changed, or what to look at."),
 	revises: z.string().exactOptional().describe("The id of the review this one revises, after changes were requested."),
-	project: z.string().min(1).describe("The project you are working in: the name of the folder at the root of its repository (the\nlast part of `git rev-parse --show-toplevel`), or of the working directory outside one. The\nperson works on many projects at once from one inbox; this is how they know who is asking."),
+	project: z.string().min(1).describe("The project you are working in: the name of the folder its repository is checked out in, the\nmain checkout's even from a worktree (the folder holding `git rev-parse --git-common-dir`), or\nof the working directory outside one. The person works on many projects at once from one inbox;\nthis is how they know who is asking."),
 }).describe("Work put in front of the person for approval or feedback. All of it together may be at most\n256 KiB: show the part that matters, or split it into several reviews.");
 export type ReviewInput = z.infer<typeof reviewInputSchema>;
 
@@ -306,7 +306,7 @@ export const briefingInputSchema = z.strictObject({
 	title: z.string().min(1).max(200),
 	summary: z.string().exactOptional().describe("What this explains, and why, as markdown."),
 	sections: z.array(briefingSectionSchema).min(1).describe("The points, in lists under optional headings."),
-	project: z.string().min(1).describe("The project you are working in: the name of the folder at the root of its repository (the\nlast part of `git rev-parse --show-toplevel`), or of the working directory outside one. The\nperson works on many projects at once from one inbox; this is how they know who is asking."),
+	project: z.string().min(1).describe("The project you are working in: the name of the folder its repository is checked out in, the\nmain checkout's even from a worktree (the folder holding `git rev-parse --git-common-dir`), or\nof the working directory outside one. The person works on many projects at once from one inbox;\nthis is how they know who is asking."),
 }).describe("Something explained as points the person can reply on one at a time: findings, options, steps, a\nlist of changes. They may write on any point, or mark it resolved, and you answer on each point\nthey wrote on until every point is resolved. Points are numbered for you, straight through every\nsection: at most fifty. All of it together may be at most 256 KiB.");
 export type BriefingInput = z.infer<typeof briefingInputSchema>;
 

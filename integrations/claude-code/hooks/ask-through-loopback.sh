@@ -7,7 +7,7 @@ source "$(dirname "$0")/project.sh"
 input=$(cat)
 project=$(project_of "$input")
 
-reason="Ask through Loopback instead: the person answers questions from their Loopback inbox, not this terminal. Call mcp__plugin_loopback_loopback__ask_question once for each question, with the same question and choices (multiSelect becomes multiple: true), any background in context, and project: \"$project\". If the Loopback tools are not available in this session, ask in your reply instead."
+reason="Ask through Loopback instead: the person answers questions from their Loopback inbox, not this terminal. Call Loopback's ask_question tool (mcp__loopback__ask_question, where its MCP server was added as loopback) once for each question, with the same question and choices (multiSelect becomes multiple: true), any background in context, and project: \"$project\". If Loopback's tools are not in this session, ask in your reply instead."
 
 jq -n --arg reason "$reason" '{
 	hookSpecificOutput: {

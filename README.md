@@ -87,16 +87,23 @@ secrets file and deploy with `--secrets-file` again.
 
 ### Claude Code
 
-Install the plugin from this repository, then give it your deployment's URL and token:
+Add Loopback's MCP server, for every project, with your token in `LOOPBACK_TOKEN`:
+
+```sh
+claude mcp add --scope user --transport http loopback https://<your-worker>/mcp \
+  --header "Authorization: Bearer $LOOPBACK_TOKEN"
+```
+
+Then install the plugin, which routes every question the agent has for you to Loopback without your
+having to ask it to. It holds only hooks, so it needs no URL or token:
 
 ```sh
 claude plugin install loopback --marketplace LoopBackTools/loopback
-printf '{"url":"https://<your-worker>","token":"<your-token>"}' \
-  | claude plugin configure loopback@loopback --values-stdin
 ```
 
-The plugin connects Claude Code to Loopback and routes every question the agent has for you there.
-[`integrations/claude-code`](integrations/claude-code/README.md) explains what it does.
+[`integrations/claude-code`](integrations/claude-code/README.md) explains what it does. Or let the
+agent do it: every deployment serves `/llms.txt`, which tells an agent how to connect itself to that
+deployment, for the way its agents sign in, and how to use Loopback once it has.
 
 ### Any MCP client
 

@@ -1,6 +1,7 @@
 packages:
   - packages/*
   - apps/*
+  - integrations/*
 
 # The OpenAPI generator's Node platform would otherwise resolve releases built for a newer Effect.
 overrides:

@@ -16,8 +16,9 @@ export default defineConfig({
 		},
 		assets: {
 			notFoundHandling: "single-page-application",
-			// /.well-known/* too, so a client probing for OAuth metadata gets the Worker's 404, not the inbox.
-			runWorkerFirst: ["/api/*", "/mcp", "/.well-known/*"],
+			// /.well-known/* too, so a client probing for OAuth metadata gets the Worker's 404, not the
+			// inbox; and /llms.txt, which the Worker writes for the way this deployment's agents sign in.
+			runWorkerFirst: ["/api/*", "/mcp", "/.well-known/*", "/llms.txt"],
 		},
 		env: {
 			LOOPBACK_TOKEN: bindings.secret(),

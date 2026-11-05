@@ -274,14 +274,34 @@ describe("connecting an agent", () => {
 	it("says to sign in with OAuth where the server says agents do", async () => {
 		open(deployment({ agents: "oauth" }).options, "/w/acme/connect");
 		expect(
-			await screen.findByText(`claude mcp add --transport http loopback ${location.origin}/mcp`),
+			await screen.findByText(
+				`claude mcp add --scope user --transport http loopback ${location.origin}/mcp`,
+			),
 		).toBeInTheDocument();
+		expect(screen.queryByText(/LOOPBACK_TOKEN/)).toBeNull();
 	});
 
 	it("says to send the token where the server says agents do", async () => {
 		open(deployment({ agents: "token" }).options, "/w/acme/connect");
 		expect(
-			await screen.findByText(/--header "Authorization: Bearer \$LOOPBACK_TOKEN"/),
+			await screen.findByText(
+				`claude mcp add --scope user --transport http loopback ${location.origin}/mcp --header "Authorization: Bearer $LOOPBACK_TOKEN"`,
+			),
 		).toBeInTheDocument();
 	});
+
+	it.each(["oauth", "token"] as const)(
+		"says to install the plugin, or to hand the agent llms.txt, where agents sign in with %s",
+		async (agents) => {
+			open(deployment({ agents }).options, "/w/acme/connect");
+			expect(
+				await screen.findByText(
+					"claude plugin install loopback --marketplace LoopBackTools/loopback",
+				),
+			).toBeInTheDocument();
+			expect(
+				screen.getByText(`Connect yourself to Loopback as ${location.origin}/llms.txt says.`),
+			).toBeInTheDocument();
+		},
+	);
 });

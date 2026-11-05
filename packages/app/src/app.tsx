@@ -79,6 +79,9 @@ function NotTheirs() {
 	);
 }
 
+/** Installs the Claude Code plugin, which holds only hooks: one command for every deployment. */
+const PLUGIN_INSTALL = "claude plugin install loopback --marketplace LoopBackTools/loopback";
+
 /** How agents sign in to a client's deployment, as its server says. */
 const agentSignInAtom = Atom.family((client: LoopbackApi) => Atom.make(client.agentSignIn));
 
@@ -92,7 +95,8 @@ function Connect({
 }) {
 	const signIn = useAtomValue(agentSignInAtom(client));
 	if (AsyncResult.isInitial(signIn)) return <Waiting />;
-	const mcp = `${window.location.origin}/mcp`;
+	const { origin } = window.location;
+	const mcp = `${origin}/mcp`;
 	const oauth = AsyncResult.isSuccess(signIn) && signIn.value === "oauth";
 	return (
 		<Page
@@ -108,14 +112,27 @@ function Connect({
 				<ClipboardText
 					text={
 						oauth
-							? `claude mcp add --transport http loopback ${mcp}`
-							: `claude mcp add --transport http loopback ${mcp} --header "Authorization: Bearer $LOOPBACK_TOKEN"`
+							? `claude mcp add --scope user --transport http loopback ${mcp}`
+							: `claude mcp add --scope user --transport http loopback ${mcp} --header "Authorization: Bearer $LOOPBACK_TOKEN"`
 					}
 				/>
 				<Text variant="secondary" size="sm">
 					{oauth
 						? "Then run /mcp in Claude Code and sign in when it asks."
 						: "With the token in LOOPBACK_TOKEN, in the shell you run it from."}
+				</Text>
+				<ClipboardText text={PLUGIN_INSTALL} />
+				<Text variant="secondary" size="sm">
+					Then install the plugin, so every question comes here without your having to ask for it.
+					It needs nothing else.
+				</Text>
+			</Section>
+			<Section title="Or have your agent do it">
+				<ClipboardText text={`Connect yourself to Loopback as ${origin}/llms.txt says.`} />
+				<Text variant="secondary" size="sm">
+					{oauth
+						? "Paste this to your agent. It sets up what it can, and tells you when to sign in."
+						: "Paste this to your agent. It sets up what it can, and asks you for the token."}
 				</Text>
 			</Section>
 			<Section title="Any other MCP client">

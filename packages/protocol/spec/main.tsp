@@ -147,9 +147,10 @@ model QuestionInput {
 	context?: string;
 
 	/**
-	 * The project you are working in: the name of the folder at the root of its repository (the
-	 * last part of `git rev-parse --show-toplevel`), or of the working directory outside one. The
-	 * person works on many projects at once from one inbox; this is how they know who is asking.
+	 * The project you are working in: the name of the folder its repository is checked out in, the
+	 * main checkout's even from a worktree (the folder holding `git rev-parse --git-common-dir`), or
+	 * of the working directory outside one. The person works on many projects at once from one inbox;
+	 * this is how they know who is asking.
 	 */
 	@minLength(1) project: string;
 }
@@ -171,9 +172,10 @@ model ReviewInput {
 	revises?: string;
 
 	/**
-	 * The project you are working in: the name of the folder at the root of its repository (the
-	 * last part of `git rev-parse --show-toplevel`), or of the working directory outside one. The
-	 * person works on many projects at once from one inbox; this is how they know who is asking.
+	 * The project you are working in: the name of the folder its repository is checked out in, the
+	 * main checkout's even from a worktree (the folder holding `git rev-parse --git-common-dir`), or
+	 * of the working directory outside one. The person works on many projects at once from one inbox;
+	 * this is how they know who is asking.
 	 */
 	@minLength(1) project: string;
 }
@@ -194,9 +196,10 @@ model BriefingInput {
 	@minItems(1) sections: BriefingSection[];
 
 	/**
-	 * The project you are working in: the name of the folder at the root of its repository (the
-	 * last part of `git rev-parse --show-toplevel`), or of the working directory outside one. The
-	 * person works on many projects at once from one inbox; this is how they know who is asking.
+	 * The project you are working in: the name of the folder its repository is checked out in, the
+	 * main checkout's even from a worktree (the folder holding `git rev-parse --git-common-dir`), or
+	 * of the working directory outside one. The person works on many projects at once from one inbox;
+	 * this is how they know who is asking.
 	 */
 	@minLength(1) project: string;
 }

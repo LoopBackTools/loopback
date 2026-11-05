@@ -8,7 +8,7 @@
  │ createLoopback({ gate, spaces? })                       │
  │   Gate: request → Access { space, actor } | Unauthorized │
  │     token: one space · JWT: the space a claim names      │
- │   /mcp · /api/v1/* · /api/v1/events · static inbox       │
+ │   /mcp · /api/v1/* · /api/v1/events · /llms.txt · inbox  │
  └──────────────┬──────────────────────────────┬───────────┘
                 ▼ RPC                          ▼
         Space Durable Object (SQLite)       R2 (images)

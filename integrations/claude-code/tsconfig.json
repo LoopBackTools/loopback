@@ -1,0 +1,8 @@
+{
+	"extends": "../../tsconfig.base.json",
+	"compilerOptions": {
+		// The tests run the hooks as Claude Code does, as processes in real repositories.
+		"types": ["node"]
+	},
+	"include": ["test"]
+}

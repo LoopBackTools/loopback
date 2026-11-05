@@ -20,6 +20,7 @@ import {
 import { UPLOAD_MAX_BYTES } from "../space/operations.ts";
 import { buildOf } from "../space/rpc.ts";
 import { VERSION } from "../version.ts";
+import { llmsTxt } from "./llms.ts";
 import { type InboxLink, makeMcp } from "./mcp.ts";
 import { Spaces } from "./spaces.ts";
 
@@ -379,6 +380,17 @@ export const makeApp = (
 	};
 	app.get(RESOURCE_METADATA_PATH, protectedResource);
 	app.get(`${RESOURCE_METADATA_PATH}/mcp`, protectedResource);
+
+	// How an agent connects itself and uses Loopback, for the way this deployment's agents sign in.
+	app.get("/llms.txt", async (c) => {
+		const servers = await run(
+			runtimeOf(c.env),
+			c.req.raw.signal,
+			c.get("requestId"),
+			Gate.use((gate) => gate.authorizationServers),
+		);
+		return c.text(llmsTxt(new URL(c.req.url).origin, servers.length === 0 ? "token" : "oauth"));
+	});
 
 	app.get("/api/v1/events", async (c) => {
 		if (c.req.header("Upgrade")?.toLowerCase() !== "websocket") {

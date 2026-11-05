@@ -71,10 +71,14 @@ client registration), and tokens issued for the resource the client asks for, so
 `https://<your deployment>/mcp`. Agents connect with no token to paste:
 
 ```sh
-claude mcp add --transport http loopback https://loopback.example.com/mcp
+claude mcp add --scope user --transport http loopback https://loopback.example.com/mcp
+claude plugin install loopback --marketplace LoopBackTools/loopback
 ```
 
-then sign in with `/mcp` in Claude Code.
+then sign in with `/mcp` in Claude Code. The plugin holds only hooks, so it needs nothing for OAuth.
+The deployment's `/llms.txt` says the same to agents: it is written for the way the gate signs agents
+in, so an agent reading it on a JWT-gated deployment is told to use OAuth, and never asked for a
+token.
 
 The app this repository deploys signs in with a pasted credential, which suits the token gate.
 Behind a login, compose [`@loopbacktools/app`](../packages/app/README.md) with your own sign-in and
@@ -136,7 +140,8 @@ const loopback = createLoopback({
 });
 ```
 
-Route `/api/v1/*`, `/mcp` and `/.well-known/oauth-protected-resource*` to `loopback.fetch`. Only
+Route `/api/v1/*`, `/mcp`, `/.well-known/oauth-protected-resource*` and `/llms.txt` to
+`loopback.fetch`. Only
 `open` and `createUpload` may be declined; the agent receives the reason as its tool's error.
 
 A JWT outlives whatever it was issued on: a membership, or an agent's grant. `check` is where a

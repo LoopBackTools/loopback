@@ -282,6 +282,18 @@ describe("a JWT-gated deployment", () => {
 		}
 	});
 
+	it("tells agents in its llms.txt to sign in with OAuth, with no token to configure", async () => {
+		const response = await call(app, "/llms.txt");
+		expect(response.status).toBe(200);
+		expect(response.headers.get("Content-Type")).toMatch(/^text\/plain; ?charset=utf-8$/i);
+		const text = await response.text();
+		expect(text).toContain(`claude mcp add --scope user --transport http loopback ${AUDIENCE}\n`);
+		expect(text).toContain("runs /mcp in Claude Code");
+		expect(text).toContain(`${ORIGIN}/.well-known/oauth-protected-resource/mcp`);
+		expect(text).toContain("claude plugin install loopback --marketplace LoopBackTools/loopback");
+		expect(text).not.toContain("LOOPBACK_TOKEN");
+	});
+
 	it("fails as a fault, not a refusal, when the login's keys are out of reach", async () => {
 		const unreachable = deployment(async () => new Response("down", { status: 503 }));
 		const response = await call(unreachable, "/api/v1/whoami", { bearer: await token() });
@@ -416,6 +428,18 @@ describe("a token-gated deployment", () => {
 		expect(metadata.status).toBe(404);
 		const refused = await exports.default.fetch(`${BASE}/whoami`);
 		expect(refused.headers.get("WWW-Authenticate")).toBe('Bearer realm="loopback"');
+	});
+
+	it("tells agents in its llms.txt to send its token, to anyone and without one", async () => {
+		const response = await exports.default.fetch(`${ORIGIN}/llms.txt`);
+		expect(response.status).toBe(200);
+		const text = await response.text();
+		expect(text).toContain(
+			`claude mcp add --scope user --transport http loopback ${AUDIENCE} --header "Authorization: Bearer $LOOPBACK_TOKEN"`,
+		);
+		expect(text).toContain("claude plugin install loopback --marketplace LoopBackTools/loopback");
+		expect(text).not.toContain("OAuth");
+		expect(text).not.toContain(env.LOOPBACK_TOKEN);
 	});
 });
 

@@ -847,7 +847,7 @@
           "project": {
             "type": "string",
             "minLength": 1,
-            "description": "The project you are working in: the name of the folder at the root of its repository (the\nlast part of `git rev-parse --show-toplevel`), or of the working directory outside one. The\nperson works on many projects at once from one inbox; this is how they know who is asking."
+            "description": "The project you are working in: the name of the folder its repository is checked out in, the\nmain checkout's even from a worktree (the folder holding `git rev-parse --git-common-dir`), or\nof the working directory outside one. The person works on many projects at once from one inbox;\nthis is how they know who is asking."
           }
         },
         "unevaluatedProperties": {
@@ -1485,7 +1485,7 @@
           "project": {
             "type": "string",
             "minLength": 1,
-            "description": "The project you are working in: the name of the folder at the root of its repository (the\nlast part of `git rev-parse --show-toplevel`), or of the working directory outside one. The\nperson works on many projects at once from one inbox; this is how they know who is asking."
+            "description": "The project you are working in: the name of the folder its repository is checked out in, the\nmain checkout's even from a worktree (the folder holding `git rev-parse --git-common-dir`), or\nof the working directory outside one. The person works on many projects at once from one inbox;\nthis is how they know who is asking."
           }
         },
         "unevaluatedProperties": {
@@ -1675,7 +1675,7 @@
           "project": {
             "type": "string",
             "minLength": 1,
-            "description": "The project you are working in: the name of the folder at the root of its repository (the\nlast part of `git rev-parse --show-toplevel`), or of the working directory outside one. The\nperson works on many projects at once from one inbox; this is how they know who is asking."
+            "description": "The project you are working in: the name of the folder its repository is checked out in, the\nmain checkout's even from a worktree (the folder holding `git rev-parse --git-common-dir`), or\nof the working directory outside one. The person works on many projects at once from one inbox;\nthis is how they know who is asking."
           }
         },
         "unevaluatedProperties": {
