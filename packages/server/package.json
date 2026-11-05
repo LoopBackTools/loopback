@@ -1,6 +1,6 @@
 {
 	"name": "@loopbacktools/server",
-	"version": "0.4.1",
+	"version": "0.5.0",
 	"description": "The Loopback server: Durable Object, HTTP API, event socket and MCP tools for Cloudflare Workers.",
 	"homepage": "https://github.com/LoopBackTools/loopback/tree/main/packages/server#readme",
 	"license": "MIT",
