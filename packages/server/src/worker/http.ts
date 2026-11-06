@@ -8,7 +8,9 @@ import { openApiDocument } from "@loopbacktools/protocol/document";
 import type { AppEnv, RouteDeps } from "../generated/runtime.gen.ts";
 import type { WorkerBindings } from "./env.ts";
 import { fileKey, Files } from "./files.ts";
+import { tooManyRequests } from "../limits.ts";
 import { type Access, Gate, vouchedAccess } from "./gate.ts";
+import { Limits } from "./limits.ts";
 import {
 	answerUnhandled,
 	type Caller,
@@ -70,9 +72,35 @@ const ticketOf = (request: Request) => {
 	return { spaceId: ticket.slice(0, dot), secret: ticket.slice(dot + 1) };
 };
 
+/** Who a request is from, or the 401 its refusal is answered with. */
+const whoIs = (request: Request, props: unknown) =>
+	Effect.gen(function* () {
+		const vouched = yield* vouchedAccess(props);
+		if (vouched !== undefined) return vouched;
+		const gate = yield* Gate;
+		return yield* gate
+			.authenticate(request)
+			.pipe(
+				Effect.catchTag("Unauthorized", (refused) =>
+					Effect.flatMap(gate.authorizationServers, (servers) =>
+						Effect.fail(
+							unauthorized(
+								refused.reason,
+								servers.length === 0
+									? undefined
+									: `${new URL(request.url).origin}${RESOURCE_METADATA_PATH}/mcp`,
+							),
+						),
+					),
+				),
+			);
+	});
+
 /**
  * Who a request is from. The Worker's invoker vouches first, when it does; otherwise the
- * deployment's gate decides from the request itself. A refusal is the 401 to answer with.
+ * deployment's gate decides from the request itself. A refusal is the 401 to answer with. Once the
+ * caller is known, the deployment's limits decide whether the request goes on: a refusal there is
+ * the 429 to answer with.
  */
 const authenticate = (
 	runtime: WorkerRuntime,
@@ -85,25 +113,13 @@ const authenticate = (
 		request.signal,
 		requestId,
 		Effect.gen(function* () {
-			const vouched = yield* vouchedAccess(props);
-			if (vouched !== undefined) return vouched;
-			const gate = yield* Gate;
-			return yield* gate
-				.authenticate(request)
-				.pipe(
-					Effect.catchTag("Unauthorized", (refused) =>
-						Effect.flatMap(gate.authorizationServers, (servers) =>
-							Effect.fail(
-								unauthorized(
-									refused.reason,
-									servers.length === 0
-										? undefined
-										: `${new URL(request.url).origin}${RESOURCE_METADATA_PATH}/mcp`,
-								),
-							),
-						),
-					),
-				);
+			const access = yield* whoIs(request, props);
+			yield* Limits.use((limits) => limits.admit(access)).pipe(
+				Effect.catchTag("RateLimited", (refused) =>
+					Effect.fail(tooManyRequests(request, refused.retryAfter, refused.reason)),
+				),
+			);
+			return access;
 		}).pipe(Effect.result),
 	);
 

@@ -14,13 +14,18 @@
 	],
 	"type": "module",
 	"exports": {
-		".": "./src/index.ts"
+		".": "./src/index.ts",
+		"./limits": "./src/limits.ts"
 	},
 	"publishConfig": {
 		"exports": {
 			".": {
 				"types": "./dist/src/index.d.ts",
 				"default": "./dist/src/index.js"
+			},
+			"./limits": {
+				"types": "./dist/src/limits.d.ts",
+				"default": "./dist/src/limits.js"
 			}
 		},
 		"access": "public"

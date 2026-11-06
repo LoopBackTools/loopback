@@ -1,6 +1,7 @@
 import type { Layer } from "effect";
 import type { LoopbackBindings, WorkerBindings, WorkerEnv } from "./worker/env.ts";
 import type { Gate } from "./worker/gate.ts";
+import { Limits } from "./worker/limits.ts";
 import { makeApp } from "./worker/http.ts";
 import { defaultInboxUrl, type InboxLink } from "./worker/mcp.ts";
 import { runtimes } from "./worker/run.ts";
@@ -15,6 +16,12 @@ export interface LoopbackOptions {
 	 */
 	readonly spaces?: Layer.Layer<Spaces, never, WorkerEnv>;
 	/**
+	 * Whether each request may go on, once its caller is known: `rateLimit` limits each space's
+	 * requests with a Rate Limiting binding. A refused caller is answered with a 429 and
+	 * `Retry-After`. No limits unless said otherwise.
+	 */
+	readonly limits?: Layer.Layer<Limits, never, WorkerEnv>;
+	/**
 	 * Where the person reads and answers a space's asks, which `open_inbox` gives agents. This
 	 * Worker's own inbox unless said otherwise: a host whose frontend lives elsewhere, or routes by
 	 * space, says where.
@@ -28,7 +35,7 @@ export interface LoopbackOptions {
  */
 export const createLoopback = (options: LoopbackOptions) => {
 	const app = makeApp(
-		runtimes(options.gate, options.spaces ?? Spaces.layer),
+		runtimes(options.gate, options.spaces ?? Spaces.layer, options.limits ?? Limits.none),
 		options.inboxUrl ?? defaultInboxUrl,
 	);
 	return {

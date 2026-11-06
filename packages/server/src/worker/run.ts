@@ -3,10 +3,11 @@ import { Cause, ConfigProvider, Effect, Exit, Layer, Logger, ManagedRuntime } fr
 import { type WorkerBindings, WorkerEnv } from "./env.ts";
 import { Files } from "./files.ts";
 import { type Access, type Gate, NotConfigured } from "./gate.ts";
+import type { Limits } from "./limits.ts";
 import { Spaces } from "./spaces.ts";
 
 /** Everything a request handler may use. */
-export type WorkerServices = Gate | Spaces | Files | WorkerEnv;
+export type WorkerServices = Gate | Limits | Spaces | Files | WorkerEnv;
 
 export type WorkerRuntime = ManagedRuntime.ManagedRuntime<WorkerServices, never>;
 
@@ -27,6 +28,7 @@ export const problem = (code: string, message: string): Problem => ({ code, mess
 export const runtimes = (
 	gate: Layer.Layer<Gate, never, WorkerEnv>,
 	spaces: Layer.Layer<Spaces, never, WorkerEnv>,
+	limits: Layer.Layer<Limits, never, WorkerEnv>,
 ) => {
 	const built = new WeakMap<object, WorkerRuntime>();
 	return (env: WorkerBindings): WorkerRuntime => {
@@ -36,6 +38,7 @@ export const runtimes = (
 				Layer.mergeAll(
 					gate,
 					spaces,
+					limits,
 					Files.layer,
 					ConfigProvider.layer(ConfigProvider.fromUnknown(env)),
 					Logger.layer([Logger.consoleJson]),
