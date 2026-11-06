@@ -157,6 +157,42 @@ Another Worker on the same account can also vouch for a caller without any token
 Loopback through a service binding with `props.loopback = { space, actor: { id, name? } }`. Only code
 deployed on the account can set props, and props that say anything else are refused with a 500.
 
+## Limit each space's requests
+
+`limits` decides whether each request goes on, once its caller is known: the API, the inbox's socket
+and MCP alike. `rateLimit` counts each space's requests with a Cloudflare
+[Rate Limiting binding](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/):
+
+```ts
+import { createLoopback, jwtGate, rateLimit } from "@loopbacktools/server";
+
+const loopback = createLoopback({
+	gate: jwtGate((env: Env) => ({/* as above */})),
+	// `retryAfter` is the binding's period: the binding doesn't say when its count resets.
+	limits: rateLimit((env: Env) => ({ limiter: env.LOOPBACK_LIMIT, retryAfter: 60 })),
+});
+```
+
+```jsonc
+// wrangler.jsonc. The namespace id is yours to choose, and unique across the account.
+"ratelimits": [
+	{ "name": "LOOPBACK_LIMIT", "namespace_id": "1001", "simple": { "limit": 1500, "period": 60 } },
+],
+```
+
+A refused caller gets a 429 with `Retry-After`. The API answers with the problem
+`request.rate_limited`; MCP answers with a JSON-RPC error, which the client shows its agent. Size the
+limit for agents waiting on replies: each polls its task every 2 seconds for the first two minutes,
+so ten waiting at once make about 300 requests a minute.
+
+The binding counts per Cloudflare location, and approximately: it sheds floods, not exact quotas. For
+an allowance such as a month's asks, wrap the spaces as above. A binding that fails lets the request
+through, and logs it.
+
+Limits of your own in front of Loopback, per IP say, can refuse the same way with
+`tooManyRequests(request, retryAfter, message)`. It is also exported on its own, from
+`@loopbacktools/server/limits`, which doesn't load the Workers runtime.
+
 ## Upgrading
 
 One deploy upgrades every tenant. A deploy resets each space's Durable Object; agents following
