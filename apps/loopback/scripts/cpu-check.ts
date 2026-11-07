@@ -20,6 +20,12 @@ if (url === undefined || token === undefined) {
 }
 
 const TASKS = "io.modelcontextprotocol/tasks";
+/**
+ * The longest the check holds a listen stream open. A deployment that publishes nothing should close
+ * it at once; one that doesn't would hold it, and the check, open for good.
+ */
+const LISTEN_HOLD_MS = Number(process.env["CPU_CHECK_LISTEN_MS"] ?? 300_000);
+
 /** How long the blocking question waits for its answer: longer waits show the CPU each lap costs. */
 const BLOCKING_WAIT_MS = Number(process.env["CPU_CHECK_WAIT_MS"] ?? 90_000);
 const auth = { Authorization: `Bearer ${token}` };
@@ -34,15 +40,24 @@ interface Message {
 
 let nextId = 1;
 
-/** One 2026-07-28 request, read to the end of its response, with every message it carried. */
+/**
+ * One 2026-07-28 request, read to the end of its response or until `holdMs` has passed, with every
+ * message it carried.
+ */
 const rpc = async (
 	method: string,
 	params: Record<string, unknown>,
-	options: { readonly name?: string; readonly tasks?: boolean; readonly progress?: boolean } = {},
+	options: {
+		readonly name?: string;
+		readonly tasks?: boolean;
+		readonly progress?: boolean;
+		readonly holdMs?: number;
+	} = {},
 ): Promise<{
 	readonly answer: Message | undefined;
 	readonly messages: Message[];
 	readonly ms: number;
+	readonly cut: boolean;
 }> => {
 	const id = nextId++;
 	const started = Date.now();
@@ -72,7 +87,27 @@ const rpc = async (
 			},
 		}),
 	});
-	const body = await response.text();
+	// Read the body as it streams, cutting it off once it has been held `holdMs`.
+	const reader = (response.body ?? new Response("").body)?.getReader();
+	if (reader === undefined) throw new Error(`${method} answered with no body.`);
+	const decoder = new TextDecoder();
+	let body = "";
+	let cut = false;
+	const deadline = started + (options.holdMs ?? Infinity);
+	for (;;) {
+		const left = deadline - Date.now();
+		const next = await Promise.race([
+			reader.read(),
+			...(Number.isFinite(left) ? [pause(Math.max(left, 0)).then(() => "cut" as const)] : []),
+		]);
+		if (next === "cut") {
+			cut = true;
+			await reader.cancel();
+			break;
+		}
+		if (next.done) break;
+		body += decoder.decode(next.value, { stream: true });
+	}
 	const messages = (
 		body.startsWith("{")
 			? [body]
@@ -85,6 +120,7 @@ const rpc = async (
 		answer: messages.find((message) => message.id === id),
 		messages,
 		ms: Date.now() - started,
+		cut,
 	};
 };
 
@@ -125,8 +161,14 @@ report(`server/discover: ${(await rpc("server/discover", {})).ms} ms`);
 for (let i = 0; i < 20; i += 1) await rpc("tools/list", {});
 report("tools/list ×20: done");
 
-const listen = await rpc("subscriptions/listen", { notifications: { toolsListChanged: true } });
-report(`subscriptions/listen: closed after ${listen.ms} ms, ${listen.messages.length} frames`);
+const listen = await rpc(
+	"subscriptions/listen",
+	{ notifications: { toolsListChanged: true } },
+	{ holdMs: LISTEN_HOLD_MS },
+);
+report(
+	`subscriptions/listen: ${listen.cut ? "still open, cut" : "closed"} after ${listen.ms} ms, ${listen.messages.length} frames`,
+);
 
 // A background task, polled at the interval it asks for, answered after 20 seconds.
 const taskQuestion = `CPU check task ${run}?`;
