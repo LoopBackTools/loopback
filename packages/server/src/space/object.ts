@@ -2,7 +2,7 @@ import { SqliteClient } from "@effect/sql-sqlite-do";
 import { BUILD_HEADER, REVISION_HEADER, type ServerEvent } from "@loopbacktools/protocol";
 import { REVISION } from "@loopbacktools/protocol/schema";
 import { DurableObject } from "cloudflare:workers";
-import { Effect, Exit, Layer, Logger, ManagedRuntime } from "effect";
+import { Cause, Effect, Exit, Layer, Logger, ManagedRuntime } from "effect";
 import { readArguments } from "./arguments.ts";
 import { migrations } from "./migrations.ts";
 import { expireFollows, operations, snapshot, startWaiting, stopWaiting } from "./operations.ts";
@@ -52,8 +52,9 @@ const RECONNECT_ONTO_NEW_CODE = 1012;
 type SpaceServices = AskStore | UploadStore | TicketStore | Host;
 
 /**
- * One space: its asks, their threads, upload tickets, and the inboxes watching it. Everything it
- * does is a space operation, served through `call`; `fetch` only accepts an inbox's WebSocket.
+ * One space: its asks, their threads, upload tickets, and the inboxes and waiting agents watching it.
+ * Everything it does is a space operation, served through `call`; `fetch` only accepts WebSockets:
+ * an inbox's, or a Worker's wait for the reply to an agent's turn.
  */
 export class Space extends DurableObject {
 	#runtime: ManagedRuntime.ManagedRuntime<SpaceServices, never>;
@@ -101,7 +102,7 @@ export class Space extends DurableObject {
 	/**
 	 * Deletes everything the space holds and closes the inboxes watching it. It carries on as an
 	 * empty space: its schema is applied afresh before it takes another request. An agent waiting
-	 * on an ask it held finds the ask gone at the end of its current lap.
+	 * on an ask it held has its wait socket closed, and finds the ask gone when it reconnects.
 	 */
 	async erase(): Promise<void> {
 		await this.ctx.blockConcurrencyWhile(async () => {
@@ -230,16 +231,18 @@ export class Space extends DurableObject {
 			build: this.#ownBuild ?? null,
 		};
 		server.serializeAttachment(accepted);
-		const started = await this.#runtime.runPromise(
+		const started = await this.#runtime.runPromiseExit(
 			startWaiting(askId, afterSeq).pipe(
 				Effect.catchTag("AskNotFound", () => Effect.succeed("missing" as const)),
 			),
 		);
-		if (started === "missing") {
-			server.close(1000, "No such ask.");
+		if (Exit.isFailure(started) || started.value === "missing") {
+			// Never handed over, so never counted as an agent waiting.
+			server.close(1000, "No wait was started.");
+			if (Exit.isFailure(started)) throw Cause.squash(started.cause);
 			return new Response("No such ask.", { status: 404 });
 		}
-		if (started) server.send(REPLY_FRAME);
+		if (started.value) server.send(REPLY_FRAME);
 		return new Response(null, { status: 101, webSocket: client });
 	}
 
@@ -254,11 +257,14 @@ export class Space extends DurableObject {
 	 */
 	override async webSocketMessage(): Promise<void> {}
 
-	/**
-	 * A socket closed. The runtime completes the close handshake itself; a wait's closing is what
-	 * tells inboxes its agent has stopped waiting.
-	 */
-	override async webSocketClose(socket: WebSocket): Promise<void> {
+	/** A socket closed. A wait's closing is what tells inboxes its agent has stopped waiting. */
+	override async webSocketClose(socket: WebSocket, code: number, reason: string): Promise<void> {
+		// Completes the close on compatibility dates before automatic replies to a close (2026-04-07).
+		try {
+			socket.close(code, reason);
+		} catch {
+			// Already closed.
+		}
 		const accepted = socket.deserializeAttachment() as Accepted | null;
 		if (accepted?.kind !== "wait") return;
 		await this.#runtime.runPromise(stopWaiting(accepted.askId));

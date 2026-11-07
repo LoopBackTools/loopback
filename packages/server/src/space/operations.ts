@@ -197,8 +197,7 @@ const follow = Effect.fnUntraced(function* (record: AskRecord, followForMs: numb
 export const expireFollows = Effect.fn("Space.expireFollows")(function* () {
 	const store = yield* AskStore;
 	const host = yield* Host;
-	for (const askId of yield* store.followsEndedBy(yield* now)) {
-		yield* store.followUntil(askId, null);
+	for (const askId of yield* store.endFollows(yield* now)) {
 		if (host.waiters(askId) === 0) yield* announceFollowing(askId);
 	}
 	const next = yield* store.nextFollowEnd;
@@ -548,7 +547,13 @@ export const followTask = Effect.fn("Space.followTask")(function* (
 	const store = yield* AskStore;
 	const { record, startedAt, answer } = yield* locateTask(askId, afterSeq);
 	if (answer !== undefined) {
-		if (!answer.delivered) yield* store.markDelivered(askId, answer.seq, yield* now);
+		const at = yield* now;
+		if (!answer.delivered) yield* store.markDelivered(askId, answer.seq, at);
+		// The agent has its reply: it isn't following the ask any more.
+		if (followed(record, at)) {
+			yield* store.followUntil(askId, null);
+			if ((yield* Host).waiters(askId) === 0) yield* announceFollowing(askId);
+		}
 		const state: TaskState = {
 			status: "completed",
 			createdAt: startedAt,

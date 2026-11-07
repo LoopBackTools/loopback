@@ -110,7 +110,8 @@ with an agent's traffic, and read back what each request cost:
 pnpm --filter loopback run deploy --mode cpu-check --secrets-file ~/loopback.secrets
 LOOPBACK_URL=https://loopback-cpu-check.<your-subdomain>.workers.dev LOOPBACK_TOKEN=... \
   node apps/loopback/scripts/cpu-check.ts
-pnpm --filter loopback exec node scripts/cpu-report.ts loopback-cpu-check <when the check began>
+CLOUDFLARE_ACCOUNT_ID=<your account id> \
+  pnpm --filter loopback exec node scripts/cpu-report.ts loopback-cpu-check <when the check began>
 ```
 
 Delete the copy afterwards with `pnpm --filter loopback exec cf workers delete loopback-cpu-check`,

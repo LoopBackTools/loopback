@@ -140,10 +140,16 @@ describe("waiting", () => {
 				Effect.map(space.get(ask.id), (current) => !current.waiting),
 			);
 			expect(gone).toBe(true);
-			expect(inbox.frames.at(-1)).toMatchObject({
-				type: "ask.updated",
-				ask: { id: ask.id, waiting: false },
-			});
+			// The inbox hears it on its own socket, which may arrive after the RPC's answer.
+			const told = yield* eventually(() =>
+				Effect.succeed(
+					inbox.frames.some(
+						(frame) =>
+							frame.type === "ask.updated" && frame.ask.id === ask.id && !frame.ask.waiting,
+					),
+				),
+			);
+			expect(told).toBe(true);
 			inbox.socket.close();
 		}),
 	);
@@ -200,6 +206,30 @@ describe("waiting", () => {
 			expect(waiter.frames).toEqual([]);
 			inbox.socket.close();
 			waiter.socket.close();
+		}),
+	);
+
+	it.live("doesn't count a wait whose start failed", () =>
+		Effect.gen(function* () {
+			const { stub, space } = fresh();
+			const ask = yield* space.open({ actor: OWNER, kind: "question", input: colour });
+			const rename = (from: string, to: string) =>
+				Effect.promise(() =>
+					runInDurableObject(stub, (_object, state) => {
+						state.storage.sql.exec(`ALTER TABLE ${from} RENAME TO ${to}`);
+					}),
+				);
+			// The thread can't be read, so starting the wait dies after its socket was accepted.
+			yield* rename("entries", "entries_away");
+			const upgrade = yield* Effect.promise(() =>
+				upgradeWait(stub, ask.id).then(
+					(response) => response.status,
+					() => "refused" as const,
+				),
+			);
+			yield* rename("entries_away", "entries");
+			expect(upgrade).not.toBe(101);
+			expect((yield* space.get(ask.id)).waiting).toBe(false);
 		}),
 	);
 
@@ -511,6 +541,19 @@ describe("presence", () => {
 			yield* Effect.sleep("10 millis");
 			yield* space.followTask(ask.id, 0, POLL_INTERVALS);
 			expect(yield* followedUntil(stub, ask.id)).toBe(first);
+		}),
+	);
+
+	it.live("stops showing a task's agent once its poll takes the reply", () =>
+		Effect.gen(function* () {
+			const { space } = fresh();
+			const ask = yield* space.open({ actor: OWNER, kind: "question", input: colour });
+			yield* space.followTask(ask.id, 0, POLL_INTERVALS);
+			yield* space.reply(ask.id, { outcome: "answered", selected: ["Red"] }, OWNER);
+			expect(yield* space.followTask(ask.id, 0, POLL_INTERVALS)).toMatchObject({
+				status: "completed",
+			});
+			expect((yield* space.get(ask.id)).waiting).toBe(false);
 		}),
 	);
 

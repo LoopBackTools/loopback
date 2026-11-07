@@ -26,7 +26,8 @@ export interface Budgets {
 export const MAX_KEEP_ALIVE_MS = 50_000;
 
 export const PLANS: Readonly<Record<Plan, Budgets>> = {
-	// As Loopback always has: a wait lasts until the reply.
+	// A wait lasts until the reply, and tasks are polled as before. The keep-alive is the 25 s lap a
+	// wait always had; SSE keep-alives, the SDK's 15 s before 0.7.0, follow it.
 	paid: { waitMs: Infinity, keepAliveMs: 25_000, pollMs: POLL_INTERVALS },
 	free: { waitMs: 600_000, keepAliveMs: 25_000, pollMs: [5_000, 15_000, 30_000] },
 };

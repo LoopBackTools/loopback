@@ -1,6 +1,6 @@
 /**
  * Drives the MCP traffic an agent sends, at a deployment, so its CPU per request can be read back
- * from Workers observability (scripts/cpu-report.md). Run it against a copy deployed with
+ * from Workers observability (scripts/cpu-report.ts). Run it against a copy deployed with
  * `pnpm run deploy --mode cpu-check`, which is held to Workers Free's 10 ms of CPU per request:
  *
  *   LOOPBACK_URL=https://loopback-cpu-check.<subdomain>.workers.dev LOOPBACK_TOKEN=... \

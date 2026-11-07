@@ -130,8 +130,11 @@ export class AskStore extends Context.Service<
 		readonly touchWaited: (id: string, at: string) => Effect.Effect<void>;
 		/** Shows a task's agent following the ask until `until`; `null` shows it gone. */
 		readonly followUntil: (id: string, until: string | null) => Effect.Effect<void>;
-		/** The asks whose following ran out at or before `at`. */
-		readonly followsEndedBy: (at: string) => Effect.Effect<string[]>;
+		/**
+		 * Ends every following that ran out at or before `at`, and names their asks. One statement,
+		 * so a poll that extends a following can't be undone by the alarm ending it.
+		 */
+		readonly endFollows: (at: string) => Effect.Effect<string[]>;
 		/** When the soonest following still running runs out, if any is. */
 		readonly nextFollowEnd: Effect.Effect<Option.Option<string>>;
 		/** An ask's thread. One holding an entry this code can't read is a defect. */
@@ -271,9 +274,11 @@ export class AskStore extends Context.Service<
 						Effect.orDie,
 					),
 
-				followsEndedBy: (at) =>
+				endFollows: (at) =>
 					sql<{ readonly id: string }>`
-						SELECT id FROM asks WHERE followed_until IS NOT NULL AND followed_until <= ${at}
+						UPDATE asks SET followed_until = NULL
+						WHERE followed_until IS NOT NULL AND followed_until <= ${at}
+						RETURNING id
 					`.pipe(
 						Effect.map((rows) => rows.map((row) => row.id)),
 						Effect.orDie,

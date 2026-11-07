@@ -12,6 +12,7 @@ import { Effect, Layer } from "effect";
 import packageJson from "../package.json" with { type: "json" };
 import { ConfiguredGate, createLoopback, DEFAULT_SPACE, Spaces } from "../src/index.ts";
 import { questionInputSchema } from "../src/generated/schemas.gen.ts";
+import { withCachedJsonSchema } from "../src/worker/schema-cache.ts";
 import { spaceClient } from "../src/space/rpc.ts";
 import { eraseSpace } from "../src/worker/spaces.ts";
 import { caller } from "./caller.ts";
@@ -727,6 +728,15 @@ describe("listen streams", () => {
 });
 
 describe("tool schemas", () => {
+	it("keeps each converted schema frozen, so no request can change what the next one lists", () => {
+		const converted = withCachedJsonSchema(questionInputSchema)["~standard"].jsonSchema.input({
+			target: "draft-2020-12",
+		}) as { readonly properties: Record<string, unknown> };
+		expect(Object.isFrozen(converted)).toBe(true);
+		expect(Object.isFrozen(converted.properties)).toBe(true);
+		expect(Object.isFrozen(converted.properties["options"])).toBe(true);
+	});
+
 	it("converts each tool schema to JSON Schema once per isolate", async () => {
 		const converts = vi.spyOn(questionInputSchema["~standard"].jsonSchema, "input");
 		try {

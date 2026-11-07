@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 import { budgetsFor, PLANS } from "../src/budgets.ts";
 
 describe("budgets", () => {
-	it("paid keeps today's behaviour", () => {
+	it("paid waits until the reply, and polls as before", () => {
 		expect(budgetsFor("paid")).toEqual({
 			waitMs: Infinity,
 			keepAliveMs: 25_000,
