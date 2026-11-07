@@ -1,5 +1,27 @@
 import { awaitingHuman, type Ask, foldBriefing, type InboxState } from "@loopbacktools/sdk";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+
+const WIDE = "(min-width: 768px)";
+
+const wideQuery = (): MediaQueryList | null =>
+	typeof window === "undefined" || typeof window.matchMedia !== "function"
+		? null
+		: window.matchMedia(WIDE);
+
+/**
+ * Whether there is room for the list and an ask side by side. A phone answers with its own controls
+ * at the bottom of the screen, within reach of a thumb; without a way to tell, it is a wide screen.
+ */
+export const useWide = (): boolean =>
+	useSyncExternalStore(
+		(changed) => {
+			const query = wideQuery();
+			query?.addEventListener("change", changed);
+			return () => query?.removeEventListener("change", changed);
+		},
+		() => wideQuery()?.matches ?? true,
+		() => true,
+	);
 
 /**
  * The ask to open once `current` has been answered: the next one awaiting the person, below it in
@@ -58,8 +80,8 @@ export const useFilter = () => {
 
 const SIDEBAR_KEY = "loopback.sidebar";
 
-/** The inbox list's width in pixels: narrow by default, so a zoomed-in page still leaves room. */
-export const SIDEBAR = { min: 220, max: 560, initial: 288 } as const;
+/** The inbox list's width in pixels: wide enough that titles wrap to two lines, not five. */
+export const SIDEBAR = { min: 280, max: 560, initial: 400 } as const;
 
 const clampWidth = (width: number) =>
 	Math.round(Math.min(SIDEBAR.max, Math.max(SIDEBAR.min, width)));
@@ -126,9 +148,6 @@ export const pointsNeedingYou = (ask: Ask): number =>
 	ask.kind === "briefing" && ask.status === "awaiting_human"
 		? foldBriefing(ask.prompt, ask.thread).needsYou
 		: 0;
-
-/** The modifier that sends with ↵, as the keyboard labels it: ⌘ on Apple's, Ctrl elsewhere. */
-export const SEND_KEY = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl";
 
 /** "just now", "5 min", "3 h", "2 d". */
 export const age = (iso: string, now: number): string => {

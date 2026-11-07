@@ -45,13 +45,16 @@ afterEach(() => {
 
 describe("the self-hosted app", () => {
 	it("opens the inbox at once when the page's host has signed the person in", async () => {
+		const user = userEvent.setup();
 		const seen = serving({ vouched: true });
 		open("/", null);
 		expect(await screen.findByText("Connecting")).toBeInTheDocument();
 		expect(here()).toBe("/w/default");
 		expect(screen.queryByLabelText("Token")).toBeNull();
 		// The host owns the session, so there is nothing here to sign out of.
-		expect(screen.queryByRole("button", { name: "Sign out" })).toBeNull();
+		await user.click(await screen.findByRole("button", { name: "Account" }));
+		expect(await screen.findByRole("menuitem", { name: "Connect an agent" })).toBeInTheDocument();
+		expect(screen.queryByRole("menuitem", { name: "Sign out" })).toBeNull();
 		expect(seen.find((call) => call.url.endsWith("/whoami"))?.authorization).toBeNull();
 	});
 
@@ -60,11 +63,12 @@ describe("the self-hosted app", () => {
 		serving({ vouched: false });
 		open("/w/default/asks/ask-1", null);
 		await user.type(await screen.findByLabelText("Token"), TOKEN);
-		await user.click(screen.getByRole("button", { name: "Open the inbox" }));
+		await user.click(screen.getByRole("button", { name: "Sign in" }));
 		await waitFor(() => expect(here()).toBe("/w/default/asks/ask-1"));
 		expect(localStorage.getItem("loopback.token")).toBe(TOKEN);
 
-		await user.click(await screen.findByRole("button", { name: "Sign out" }));
+		await user.click(await screen.findByRole("button", { name: "Account" }));
+		await user.click(await screen.findByRole("menuitem", { name: "Sign out" }));
 		expect(await screen.findByLabelText("Token")).toBeInTheDocument();
 		expect(localStorage.getItem("loopback.token")).toBeNull();
 	});

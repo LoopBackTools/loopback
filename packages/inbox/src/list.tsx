@@ -1,4 +1,3 @@
-import { Badge, Text } from "@cloudflare/kumo";
 import type { Ask, InboxState } from "@loopbacktools/sdk";
 import {
 	CaretDown,
@@ -11,31 +10,40 @@ import {
 import { AskLink } from "./context.tsx";
 import { age, headline, pointsNeedingYou, useNow, useRecentOpen } from "./hooks.ts";
 
-export function KindIcon({ ask }: { readonly ask: Ask }) {
+export function KindIcon({ ask, size = 20 }: { readonly ask: Ask; readonly size?: number }) {
 	switch (ask.kind) {
 		case "question":
-			return <ChatCircleDots size={18} weight="duotone" aria-label="Question" />;
+			return <ChatCircleDots size={size} weight="duotone" aria-label="Question" />;
 		case "review":
-			return <Eye size={18} weight="duotone" aria-label="Review" />;
+			return <Eye size={size} weight="duotone" aria-label="Review" />;
 		case "briefing":
-			return <ListBullets size={18} weight="duotone" aria-label="Briefing" />;
+			return <ListBullets size={size} weight="duotone" aria-label="Briefing" />;
 		case "unknown":
-			return <Question size={18} weight="duotone" aria-label="Can't be shown" />;
+			return <Question size={size} weight="duotone" aria-label="Can't be shown" />;
 	}
 }
 
-/** Whether an agent is blocked on the ask right now. */
+/** The dot that means an agent is blocked on the person: the one place orange is used. */
+export function WaitingDot({ tone = "waiting" }: { readonly tone?: "waiting" | "quiet" }) {
+	return (
+		<span
+			aria-hidden
+			className={`size-2 shrink-0 rounded-full ${
+				tone === "waiting"
+					? "bg-(--loopback-waiting) shadow-[0_0_0_3px_color-mix(in_oklch,var(--loopback-waiting)_22%,transparent)]"
+					: "bg-(--text-color-kumo-inactive)"
+			}`}
+		/>
+	);
+}
+
+/** That an agent is blocked on the ask right now. Nothing when it isn't: only waiting is news. */
 export function Waiting({ ask }: { readonly ask: Ask }) {
-	if (ask.status === "closed") return null;
-	return ask.waiting ? (
-		<span className="inline-flex items-center gap-1.5 text-xs text-kumo-success">
-			<span className="size-2 animate-pulse rounded-full bg-kumo-success" />
+	if (ask.status === "closed" || !ask.waiting) return null;
+	return (
+		<span className="inline-flex shrink-0 items-center gap-1.5 text-[15px] leading-[22px] font-semibold text-kumo-brand">
+			<WaitingDot />
 			Agent waiting
-		</span>
-	) : (
-		<span className="inline-flex items-center gap-1.5 text-xs text-kumo-inactive">
-			<span className="size-2 rounded-full bg-kumo-line" />
-			Agent not waiting
 		</span>
 	);
 }
@@ -50,29 +58,36 @@ function Row({
 	readonly now: number;
 }) {
 	const needing = pointsNeedingYou(ask);
+	const meta = [ask.project, age(ask.closedAt ?? ask.updatedAt, now)].filter(
+		(part): part is string => part !== undefined,
+	);
 	return (
 		<AskLink
 			askId={ask.id}
 			aria-current={selected ? "page" : undefined}
-			className={`flex gap-3 border-b border-kumo-hairline px-4 py-3 transition-colors hover:bg-kumo-tint ${
-				selected ? "bg-kumo-tint" : ""
+			// The open ask takes the page's colour, over the list's edge, so it reads as a tab into it.
+			className={`flex gap-3 px-5 py-3.5 transition-colors md:px-7 ${
+				selected ? "bg-kumo-canvas" : "hover:bg-kumo-tint"
 			}`}
 		>
-			<span className="mt-0.5 shrink-0 text-kumo-subtle">
+			<span className="flex h-[25px] w-5 shrink-0 items-center text-kumo-subtle">
 				<KindIcon ask={ask} />
 			</span>
-			<span className="flex min-w-0 flex-1 flex-col gap-1">
-				<span className="flex items-baseline gap-2">
-					<Text truncate bold={ask.status === "awaiting_human"}>
-						{headline(ask)}
-					</Text>
-					<span className="ml-auto shrink-0 text-xs text-kumo-subtle tabular-nums">
-						{age(ask.closedAt ?? ask.updatedAt, now)}
-					</span>
+			<span className="flex min-w-0 flex-1 flex-col gap-1.5">
+				<span
+					className={`text-[17px] leading-[25px] text-kumo-default ${
+						ask.status === "awaiting_human" ? "font-semibold" : ""
+					}`}
+				>
+					{headline(ask)}
 				</span>
-				<span className="flex flex-wrap items-center gap-2">
-					{ask.project === undefined ? null : <Badge variant="neutral">{ask.project}</Badge>}
-					{needing === 0 ? null : <Badge variant="orange">{needing} need you</Badge>}
+				<span className="flex items-center justify-between gap-3">
+					<span className="flex min-w-0 flex-wrap items-center gap-x-2 text-[15px] leading-[22px] text-kumo-subtle">
+						<span className="tabular-nums">{meta.join(" · ")}</span>
+						{needing === 0 ? null : (
+							<span className="font-semibold text-kumo-brand">{needing} need you</span>
+						)}
+					</span>
 					<Waiting ask={ask} />
 				</span>
 			</span>
@@ -80,8 +95,9 @@ function Row({
 	);
 }
 
-const SECTION_HEADING =
-	"sticky top-0 z-10 flex w-full items-center gap-1.5 border-b border-kumo-hairline bg-kumo-canvas px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-kumo-subtle";
+const HEADING = "flex items-baseline gap-2 px-5 pb-1.5 text-left md:px-7";
+const TITLE = "text-[20px] leading-7 font-bold tracking-[-0.01em] text-kumo-default";
+const COUNT = "text-[20px] leading-7 text-kumo-subtle tabular-nums";
 
 function Section({
 	title,
@@ -98,13 +114,13 @@ function Section({
 	readonly collapse?: { readonly open: boolean; readonly toggle: () => void };
 }) {
 	if (asks.length === 0) return null;
-	const count = <span className="tabular-nums">· {asks.length}</span>;
 	const open = collapse?.open ?? true;
 	return (
-		<section>
+		<section className="flex flex-col gap-0.5">
 			{collapse === undefined ? (
-				<h2 className={SECTION_HEADING}>
-					{title} {count}
+				<h2 className={HEADING}>
+					<span className={TITLE}>{title}</span>
+					<span className={COUNT}>{asks.length}</span>
 				</h2>
 			) : (
 				<h2>
@@ -112,10 +128,17 @@ function Section({
 						type="button"
 						aria-expanded={open}
 						onClick={collapse.toggle}
-						className={`${SECTION_HEADING} hover:text-kumo-default`}
+						className={`${HEADING} min-h-11 w-full items-center rounded-lg hover:bg-kumo-tint`}
 					>
-						{open ? <CaretDown size={12} /> : <CaretRight size={12} />}
-						{title} {count}
+						<span className={TITLE}>{title}</span>
+						<span className={COUNT}>{asks.length}</span>
+						<span className="text-kumo-default">
+							{open ? (
+								<CaretDown size={18} weight="bold" />
+							) : (
+								<CaretRight size={18} weight="bold" />
+							)}
+						</span>
 					</button>
 				</h2>
 			)}
@@ -139,9 +162,11 @@ export function AskList({
 	const yours = inbox.open.filter((ask) => ask.status === "awaiting_human");
 	const theirs = inbox.open.filter((ask) => ask.status === "awaiting_agent");
 	return (
-		<nav aria-label="Asks">
+		<nav aria-label="Asks" className="flex flex-col gap-7 pb-8">
 			{inbox.open.length === 0 ? (
-				<p className="px-4 py-6 text-sm text-kumo-subtle">Nothing needs you right now.</p>
+				<p className="px-5 text-[17px] leading-[26px] text-kumo-subtle md:px-7">
+					Nothing needs you right now.
+				</p>
 			) : null}
 			<Section title="Your turn" asks={yours} selected={selected} now={now} />
 			<Section title="Waiting on the agent" asks={theirs} selected={selected} now={now} />

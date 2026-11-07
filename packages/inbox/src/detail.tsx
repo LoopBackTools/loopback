@@ -1,4 +1,4 @@
-import { Badge, Banner, Button, InputArea, Text } from "@cloudflare/kumo";
+import { Banner, Button, DropdownMenu, InputArea } from "@cloudflare/kumo";
 import { useAtomSet } from "@effect/atom-react";
 import {
 	ApiError,
@@ -14,27 +14,22 @@ import {
 	ArrowLeft,
 	Check,
 	ChatTeardropText,
+	DotsThree,
 	PaperPlaneRight,
 	WarningCircle,
 	X,
 } from "@phosphor-icons/react";
 import { Cause, Exit } from "effect";
-import { Component, type ReactNode, useState } from "react";
+import { Component, type ReactNode, useEffect, useRef, useState } from "react";
 import { BriefingBody } from "./briefing.tsx";
 import { Blocks, Prose } from "./content.tsx";
 import { AskLink, useClient, useInboxKeys, useNavigation } from "./context.tsx";
-import { age, SEND_KEY, useNow } from "./hooks.ts";
-import { KindIcon, Waiting } from "./list.tsx";
+import { age, useNow, useWide } from "./hooks.ts";
+import { WaitingDot } from "./list.tsx";
 import { reloadPage } from "./page.ts";
 import { useMe, whoIs } from "./people.ts";
 import { replyAtom } from "./state.ts";
 import { AgentSaid, PersonSaid } from "./thread.tsx";
-
-const STATUS = {
-	awaiting_human: { label: "Your turn", variant: "orange" },
-	awaiting_agent: { label: "Waiting on the agent", variant: "neutral" },
-	closed: { label: "Closed", variant: "green" },
-} as const;
 
 /** A reply in the words of the person who gave it. */
 const said = (reply: Reply, who: string): { readonly title: string; readonly body?: string } => {
@@ -126,16 +121,23 @@ const useNote = (askId: string) => {
 	};
 };
 
-/** The reply controls: one box for words, and the moves this kind of ask allows. */
-function ReplyPanel({ ask, onReplied }: { readonly ask: Ask; readonly onReplied: () => void }) {
+/** What failed when a reply was sent, in the person's terms. */
+interface Failure {
+	readonly title: string;
+	readonly description: string;
+}
+
+/**
+ * Replying to a question or review: the words and picks not yet sent, kept in this browser, and
+ * sending them. Desktop and phone draw it differently, from this one state.
+ */
+const useReply = (ask: Ask, onReplied: () => void) => {
 	const send = useAtomSet(replyAtom(useClient()), { mode: "promiseExit" });
-	const { text, picked, setText, setPicked, clear } = useNote(ask.id);
+	const note = useNote(ask.id);
 	const [sending, setSending] = useState<string | null>(null);
-	const [error, setError] = useState<{
-		readonly title: string;
-		readonly description: string;
-	} | null>(null);
-	const words = text.trim();
+	const [error, setError] = useState<Failure | null>(null);
+	const words = note.text.trim();
+	const question = ask.kind === "question" ? ask : null;
 
 	const submit = async (key: string, reply: ReplyBody) => {
 		setSending(key);
@@ -143,7 +145,7 @@ function ReplyPanel({ ask, onReplied }: { readonly ask: Ask; readonly onReplied:
 		const exit = await send({ askId: ask.id, reply });
 		setSending(null);
 		if (Exit.isSuccess(exit)) {
-			clear();
+			note.clear();
 			onReplied();
 			return;
 		}
@@ -160,106 +162,152 @@ function ReplyPanel({ ask, onReplied }: { readonly ask: Ask; readonly onReplied:
 					},
 		);
 	};
-	const note = words === "" ? {} : { text: words };
+	const withText = words === "" ? {} : { text: words };
 
-	const question = ask.kind === "question" ? ask : null;
 	const choose = (label: string) => {
 		if (question === null) return;
 		if (question.prompt.multiple) {
-			setPicked((current) =>
+			note.setPicked((current) =>
 				current.includes(label) ? current.filter((item) => item !== label) : [...current, label],
 			);
 		} else {
-			void submit(label, { outcome: "answered", selected: [label], ...note });
+			void submit(label, { outcome: "answered", selected: [label], ...withText });
 		}
 	};
 
-	const primary = (): [string, ReplyBody] | null =>
+	const moves = {
+		send: () =>
+			void submit("send", { outcome: "answered", selected: [...note.picked], ...withText }),
+		approve: () =>
+			void submit("approve", { outcome: "approved", ...(words === "" ? {} : { note: words }) }),
+		changes: () => void submit("changes", { outcome: "changes_requested", feedback: words }),
+		ask: () => void submit("ask", { outcome: "follow_up", question: words }),
+		dismiss: () => void submit("dismiss", { outcome: "dismissed" }),
+	};
+
+	/** The main reply, as ⌘↵ sends it: the answer to a question, or approval of a review. */
+	const primary = (): (() => void) | null =>
 		question !== null
-			? picked.length > 0 || words !== ""
-				? ["send", { outcome: "answered", selected: [...picked], ...note }]
+			? note.picked.length > 0 || words !== ""
+				? moves.send
 				: null
-			: ["approve", { outcome: "approved", ...(words === "" ? {} : { note: words }) }];
+			: moves.approve;
 
-	const busy = sending !== null;
+	return {
+		...note,
+		words,
+		question,
+		sending,
+		busy: sending !== null,
+		error,
+		choose,
+		moves,
+		primary,
+	};
+};
 
-	// ⌘↵ (Ctrl↵ off Apple's keyboards) sends the main reply wherever focus is, since an ask that opens by itself has nothing
-	// focused; 1-9 pick a choice while the reply box does not have focus.
+type Replying = ReturnType<typeof useReply>;
+
+function SendError({ error }: { readonly error: Failure | null }) {
+	return error === null ? null : (
+		<Banner
+			role="alert"
+			variant="error"
+			icon={<WarningCircle />}
+			title={error.title}
+			description={error.description}
+		/>
+	);
+}
+
+/** The ⌘↵ and 1-9 shortcuts, while the ask is open on a wide screen. */
+function useReplyKeys(reply: Replying) {
+	// ⌘↵ (Ctrl↵ off Apple's keyboards) sends the main reply wherever focus is, since an ask that opens
+	// by itself has nothing focused; 1-9 pick a choice while the reply box does not have focus.
 	useInboxKeys((event) => {
-		if (busy) return;
+		if (reply.busy) return;
 		if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-			const move = primary();
+			const move = reply.primary();
 			if (move === null) return;
 			event.preventDefault();
-			void submit(...move);
+			move();
 			return;
 		}
 		const target = event.target as HTMLElement | null;
-		if (question === null || event.metaKey || event.ctrlKey) return;
+		if (reply.question === null || event.metaKey || event.ctrlKey) return;
 		if (target?.closest("input, textarea, [contenteditable]")) return;
-		const option = question.prompt.options[Number(event.key) - 1];
-		if (option !== undefined) choose(option.label);
+		const option = reply.question.prompt.options[Number(event.key) - 1];
+		if (option !== undefined) reply.choose(option.label);
 	});
+}
 
+/** On a wide screen: the choices, then a box for words, then every move this kind of ask allows. */
+function ReplyPanel({ reply }: { readonly reply: Replying }) {
+	useReplyKeys(reply);
+	const { question, busy, sending, moves, words } = reply;
+	const options = question?.prompt.options ?? [];
 	return (
-		<div className="flex flex-col gap-3 rounded-lg border border-kumo-line bg-kumo-elevated p-4">
-			{error === null ? null : (
-				<Banner
-					role="alert"
-					variant="error"
-					icon={<WarningCircle />}
-					title={error.title}
-					description={error.description}
-				/>
-			)}
-			{question === null || question.prompt.options.length === 0 ? null : (
+		<div className="flex flex-col gap-3 pt-8">
+			<SendError error={reply.error} />
+			{question === null || options.length === 0 ? null : (
 				<Choices
 					question={question}
-					picked={picked}
+					picked={reply.picked}
 					busy={busy}
 					sending={sending}
-					onChoose={choose}
+					onChoose={reply.choose}
+					hint={
+						question.prompt.multiple
+							? "Pick any that apply, then send."
+							: "Picking one sends it, along with any note you've written below."
+					}
 				/>
 			)}
-			<InputArea
-				aria-label={question === null ? "Feedback or a note" : "Your answer, or a note"}
-				placeholder={
-					question === null
-						? "Feedback, a note to go with your approval, or a question"
-						: question.prompt.options.length === 0
-							? "Your answer, or a question back"
-							: "Add a note, answer in your own words, or ask a question back"
-				}
-				value={text}
-				onValueChange={setText}
-				autoResize
-				minRows={3}
-				maxRows={12}
-				disabled={busy}
-			/>
-			<div className="flex flex-wrap items-center gap-2">
+			<div className={question !== null && options.length > 0 ? "pt-6" : ""}>
+				<InputArea
+					label={
+						question === null
+							? "Note or feedback"
+							: options.length === 0
+								? "Your answer"
+								: "Or reply in your own words"
+					}
+					placeholder={
+						question === null
+							? "What to change, or a note to go with your approval"
+							: options.length === 0
+								? "Your answer, or a question back"
+								: "Add a note, give a different answer, or ask a question back"
+					}
+					value={reply.text}
+					onValueChange={reply.setText}
+					autoResize
+					minRows={3}
+					maxRows={12}
+					disabled={busy}
+					className="text-[17px] leading-[26px]"
+				/>
+			</div>
+			<div className="flex flex-wrap items-center gap-2 pt-1">
 				{question === null ? (
 					<>
 						<Button
 							variant="primary"
+							data-primary=""
+							size="lg"
 							icon={<Check />}
+							aria-keyshortcuts="Meta+Enter Control+Enter"
 							loading={sending === "approve"}
 							disabled={busy}
-							onClick={() =>
-								void submit("approve", {
-									outcome: "approved",
-									...(words === "" ? {} : { note: words }),
-								})
-							}
+							onClick={moves.approve}
 						>
 							Approve
 						</Button>
 						<Button
+							size="lg"
 							loading={sending === "changes"}
 							disabled={busy || words === ""}
-							onClick={() =>
-								void submit("changes", { outcome: "changes_requested", feedback: words })
-							}
+							onClick={moves.changes}
 						>
 							Request changes
 						</Button>
@@ -267,36 +315,38 @@ function ReplyPanel({ ask, onReplied }: { readonly ask: Ask; readonly onReplied:
 				) : (
 					<Button
 						variant="primary"
+						data-primary=""
+						size="lg"
 						icon={<PaperPlaneRight />}
+						aria-keyshortcuts="Meta+Enter Control+Enter"
 						loading={sending === "send"}
-						disabled={busy || (picked.length === 0 && words === "")}
-						onClick={() =>
-							void submit("send", { outcome: "answered", selected: [...picked], ...note })
-						}
+						disabled={busy || (reply.picked.length === 0 && words === "")}
+						onClick={moves.send}
 					>
 						Send
 					</Button>
 				)}
 				<Button
+					size="lg"
 					icon={<ChatTeardropText />}
 					loading={sending === "ask"}
 					disabled={busy || words === ""}
-					onClick={() => void submit("ask", { outcome: "follow_up", question: words })}
+					onClick={moves.ask}
 				>
 					Ask back
 				</Button>
 				<Button
 					variant="ghost"
+					size="lg"
 					icon={<X />}
 					loading={sending === "dismiss"}
 					disabled={busy}
-					onClick={() => void submit("dismiss", { outcome: "dismissed" })}
+					onClick={moves.dismiss}
+					// Its words line up with the box's edge; the padding hangs past it.
+					className="-mr-4 ml-auto"
 				>
 					Dismiss
 				</Button>
-				<span className="ml-auto hidden text-xs text-kumo-subtle sm:inline">
-					{SEND_KEY}↵ {question === null ? "approves" : "sends"}
-				</span>
 			</div>
 		</div>
 	);
@@ -308,12 +358,17 @@ function Choices({
 	busy,
 	sending,
 	onChoose,
+	hint,
+	compact = false,
 }: {
 	readonly question: QuestionAsk;
 	readonly picked: readonly string[];
 	readonly busy: boolean;
 	readonly sending: string | null;
 	readonly onChoose: (label: string) => void;
+	readonly hint: string;
+	/** A phone's: tighter, with the description smaller than the choice. */
+	readonly compact?: boolean;
 }) {
 	return (
 		<div className="flex flex-col gap-2">
@@ -326,32 +381,366 @@ function Choices({
 						disabled={busy}
 						aria-pressed={question.prompt.multiple ? on : undefined}
 						onClick={() => onChoose(option.label)}
-						className={`flex items-start gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors disabled:opacity-60 ${
+						className={`flex min-h-14 items-start text-left transition-colors disabled:opacity-60 ${
+							compact ? "gap-3 rounded-lg px-3.5 py-3" : "gap-4 rounded-lg px-5 py-4"
+						} border ${
 							on
 								? "border-kumo-brand bg-kumo-tint"
-								: "border-kumo-line bg-kumo-base hover:bg-kumo-tint"
+								: "border-(--loopback-edge) bg-kumo-elevated hover:bg-kumo-tint"
 						}`}
 					>
-						<span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded border border-kumo-line text-xs text-kumo-subtle tabular-nums">
+						<span className="flex size-7 shrink-0 items-center justify-center rounded-md border border-kumo-line text-[15px] font-semibold text-kumo-default tabular-nums">
 							{sending === option.label ? "…" : index + 1}
 						</span>
-						<span className="flex flex-col">
-							<Text bold>{option.label}</Text>
+						<span className="flex min-w-0 flex-col gap-0.5 pt-px">
+							<span className="text-[17px] leading-6 font-semibold text-kumo-default">
+								{option.label}
+							</span>
 							{option.description === undefined ? null : (
-								<Text variant="secondary" size="sm">
+								<span
+									className={`text-kumo-subtle ${compact ? "text-[15px] leading-[21px]" : "text-[17px] leading-[26px]"}`}
+								>
 									{option.description}
-								</Text>
+								</span>
 							)}
 						</span>
 					</button>
 				);
 			})}
-			<Text variant="secondary" size="xs">
-				{question.prompt.multiple
-					? "Pick any that apply, then send."
-					: "Picking a choice sends it, with any note you have typed."}
-			</Text>
+			<p className="pt-1 text-[15px] leading-[22px] text-kumo-subtle">{hint}</p>
 		</div>
+	);
+}
+
+/** What the phone's composer is for, beyond answering a question: a review's other moves. */
+type Mode = "changes" | "ask" | "note";
+
+const MODE: Record<
+	Mode,
+	{ readonly title: string; readonly placeholder: string; readonly action: string }
+> = {
+	changes: {
+		title: "Requesting changes",
+		placeholder: "What should change?",
+		action: "Send changes",
+	},
+	ask: { title: "Asking back", placeholder: "Your question for the agent", action: "Ask back" },
+	note: { title: "Approving with a note", placeholder: "Your note", action: "Approve" },
+};
+
+/** Fits a box to what is written in it, up to seven lines; beyond that it scrolls. */
+const fit = (box: HTMLTextAreaElement) => {
+	box.style.height = "auto";
+	box.style.height = `${Math.min(box.scrollHeight, 168)}px`;
+};
+
+/** A box that grows with what is written in it. */
+function GrowingText({
+	value,
+	onChange,
+	placeholder,
+	label,
+	disabled,
+	focus,
+	rows,
+}: {
+	readonly value: string;
+	readonly onChange: (value: string) => void;
+	readonly placeholder: string;
+	readonly label: string;
+	readonly disabled: boolean;
+	/** Whether the person just asked for the box, by tapping a move that needs words. */
+	readonly focus: boolean;
+	readonly rows: number;
+}) {
+	const box = useRef<HTMLTextAreaElement>(null);
+	useEffect(() => {
+		if (focus) box.current?.focus();
+	}, [focus]);
+	return (
+		<textarea
+			// Fitted on every render, so it shrinks back when the box folds to one line as well as when
+			// it is written in.
+			ref={(element) => {
+				box.current = element;
+				if (element !== null) fit(element);
+			}}
+			aria-label={label}
+			value={value}
+			onChange={(event) => {
+				onChange(event.target.value);
+				fit(event.target);
+			}}
+			placeholder={placeholder}
+			disabled={disabled}
+			rows={rows}
+			className="min-w-0 flex-1 resize-none bg-transparent text-[17px] leading-6 text-kumo-default outline-none placeholder:text-kumo-placeholder"
+		/>
+	);
+}
+
+const CAPSULE = "h-10 rounded-full px-4";
+
+/**
+ * On a phone, the reply sits at the bottom of the screen, over a fade, within reach of a thumb. A
+ * question's is a box that grows once written in, with its moves inside it; a review's is its two
+ * moves, the box appearing only for one that needs words.
+ */
+function Chin({
+	reply,
+	mode,
+	setMode,
+}: {
+	readonly reply: Replying;
+	readonly mode: Mode | null;
+	readonly setMode: (mode: Mode | null) => void;
+}) {
+	const { question, busy, sending, moves, words } = reply;
+	const [focused, setFocused] = useState(false);
+	const review = question === null;
+	const composing = review ? mode !== null : focused || reply.text !== "";
+	const shown = mode === null ? null : MODE[mode];
+	return (
+		<div className="sticky bottom-0 z-10 -mx-5 mt-auto flex flex-col gap-2 bg-linear-to-b from-transparent via-kumo-canvas/90 via-40% to-kumo-canvas px-3 pt-8 pb-[max(env(safe-area-inset-bottom),12px)]">
+			<SendError error={reply.error} />
+			{review && mode === null ? (
+				<div className="flex gap-2.5">
+					<Button
+						size="lg"
+						className="h-[52px] flex-1 justify-center rounded-full text-[17px]"
+						disabled={busy}
+						onClick={() => setMode("changes")}
+					>
+						Request changes
+					</Button>
+					<Button
+						variant="primary"
+						data-primary=""
+						size="lg"
+						icon={<Check />}
+						className="h-[52px] flex-1 justify-center rounded-full text-[17px]"
+						loading={sending === "approve"}
+						disabled={busy}
+						onClick={moves.approve}
+					>
+						Approve
+					</Button>
+				</div>
+			) : (
+				<div
+					onFocus={() => setFocused(true)}
+					onBlur={(event) => {
+						if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false);
+					}}
+					className={`flex border bg-kumo-base shadow-lg transition-[border-radius] ${
+						composing
+							? "flex-col gap-2.5 rounded-[22px] border-kumo-brand py-2.5 pr-2 pl-4"
+							: "items-center gap-2.5 rounded-full border-kumo-line py-1.5 pr-1.5 pl-[18px]"
+					}`}
+				>
+					{shown === null ? null : (
+						<div className="flex items-center justify-between">
+							<span className="text-[15px] leading-[22px] font-semibold text-kumo-subtle">
+								{shown.title}
+							</span>
+							<Button
+								variant="ghost"
+								shape="circle"
+								aria-label="Cancel"
+								icon={<X />}
+								onClick={() => setMode(null)}
+							/>
+						</div>
+					)}
+					<div className="flex min-w-0 flex-1 items-center gap-2.5">
+						<GrowingText
+							value={reply.text}
+							onChange={reply.setText}
+							placeholder={shown?.placeholder ?? "Reply in your own words"}
+							label={shown?.title ?? "Your answer, or a note"}
+							disabled={busy}
+							focus={shown !== null}
+							rows={composing ? 2 : 1}
+						/>
+						{composing ? null : (
+							<Button
+								shape="circle"
+								aria-label="Send"
+								icon={<PaperPlaneRight />}
+								className="size-10 shrink-0"
+								disabled
+							/>
+						)}
+					</div>
+					{!composing ? null : (
+						<div className="flex justify-end gap-2">
+							{mode === null ? (
+								<>
+									<Button
+										icon={<ChatTeardropText />}
+										className={CAPSULE}
+										loading={sending === "ask"}
+										disabled={busy || words === ""}
+										onClick={moves.ask}
+									>
+										Ask back
+									</Button>
+									<Button
+										variant="primary"
+										data-primary=""
+										icon={<PaperPlaneRight />}
+										className={CAPSULE}
+										loading={sending === "send"}
+										disabled={busy || (reply.picked.length === 0 && words === "")}
+										onClick={moves.send}
+									>
+										Send
+									</Button>
+								</>
+							) : (
+								<Button
+									variant="primary"
+									data-primary=""
+									icon={mode === "note" ? <Check /> : <PaperPlaneRight />}
+									className={CAPSULE}
+									loading={sending !== null}
+									disabled={busy || (mode !== "note" && words === "")}
+									onClick={
+										mode === "changes" ? moves.changes : mode === "ask" ? moves.ask : moves.approve
+									}
+								>
+									{shown?.action}
+								</Button>
+							)}
+						</div>
+					)}
+				</div>
+			)}
+		</div>
+	);
+}
+
+/** The top of an ask on a phone: the way back to the list, and the moves too rare for the chin. */
+function PhoneBar({
+	items,
+}: {
+	readonly items: readonly { readonly label: string; readonly onSelect: () => void }[];
+}) {
+	const { onSelect } = useNavigation();
+	return (
+		<div className="sticky top-0 z-10 -mx-5 flex h-11 items-center justify-between bg-kumo-canvas px-1.5">
+			<Button
+				variant="ghost"
+				size="lg"
+				icon={<ArrowLeft size={20} />}
+				onClick={() => onSelect(null)}
+				className="text-[17px]"
+			>
+				Inbox
+			</Button>
+			{items.length === 0 ? null : (
+				<DropdownMenu>
+					<DropdownMenu.Trigger>
+						<Button
+							variant="ghost"
+							shape="square"
+							size="lg"
+							aria-label="More"
+							icon={<DotsThree size={24} weight="bold" />}
+						/>
+					</DropdownMenu.Trigger>
+					<DropdownMenu.Content>
+						{items.map((item) => (
+							<DropdownMenu.Item key={item.label} onClick={item.onSelect}>
+								{item.label}
+							</DropdownMenu.Item>
+						))}
+					</DropdownMenu.Content>
+				</DropdownMenu>
+			)}
+		</div>
+	);
+}
+
+/** An ask the person is to answer: the ask itself, then the reply, laid out for the screen. */
+function Answering({
+	ask,
+	onReplied,
+	wide,
+	children,
+}: {
+	readonly ask: Exclude<Ask, UnknownAsk>;
+	readonly onReplied: () => void;
+	readonly wide: boolean;
+	readonly children: ReactNode;
+}) {
+	const reply = useReply(ask, onReplied);
+	const [mode, setMode] = useState<Mode | null>(null);
+	if (wide) {
+		return (
+			<Frame>
+				{children}
+				<ReplyPanel reply={reply} />
+			</Frame>
+		);
+	}
+	const question = reply.question;
+	return (
+		<Frame
+			bar={
+				<PhoneBar
+					items={[
+						...(question === null
+							? [
+									{ label: "Ask back", onSelect: () => setMode("ask") },
+									{ label: "Approve with a note", onSelect: () => setMode("note") },
+								]
+							: []),
+						{ label: "Dismiss", onSelect: reply.moves.dismiss },
+					]}
+				/>
+			}
+			chin={<Chin reply={reply} mode={mode} setMode={setMode} />}
+		>
+			{children}
+			{question === null || question.prompt.options.length === 0 ? null : (
+				<div className="pt-5">
+					<Choices
+						question={question}
+						picked={reply.picked}
+						busy={reply.busy}
+						sending={reply.sending}
+						onChoose={reply.choose}
+						hint={
+							question.prompt.multiple ? "Tap any that apply, then send." : "Tap one to send it."
+						}
+						compact
+					/>
+				</div>
+			)}
+		</Frame>
+	);
+}
+
+/**
+ * The column an ask is read in: centred on a wide screen, the full width of a phone, with the
+ * phone's bar at the top and its reply at the bottom.
+ */
+function Frame({
+	bar,
+	chin,
+	children,
+}: {
+	readonly bar?: ReactNode;
+	readonly chin?: ReactNode;
+	readonly children: ReactNode;
+}) {
+	return (
+		<article className="mx-auto flex min-h-full w-full max-w-[49rem] flex-col px-5 pb-0 md:px-8 md:pt-12 md:pb-16">
+			{bar}
+			<div className="flex flex-col pb-6 md:pb-0">{children}</div>
+			{chin}
+		</article>
 	);
 }
 
@@ -388,13 +777,13 @@ function CannotShow({
 		setFailed(failure instanceof Error ? failure.message : "no reason given");
 	};
 	return (
-		<article className="mx-auto flex max-w-3xl flex-col gap-4 px-4 py-6 md:px-8">
+		<article className="mx-auto flex w-full max-w-[49rem] flex-col gap-4 px-5 py-4 md:px-8 md:pt-12">
 			<button
 				type="button"
 				onClick={() => onSelect(null)}
-				className="inline-flex w-fit items-center gap-1 text-sm text-kumo-subtle md:hidden"
+				className="inline-flex min-h-11 w-fit items-center gap-1.5 text-[17px] text-kumo-default md:hidden"
 			>
-				<ArrowLeft /> Inbox
+				<ArrowLeft size={20} /> Inbox
 			</button>
 			<Banner
 				variant="error"
@@ -420,6 +809,7 @@ function CannotShow({
 					<Button
 						className="w-fit"
 						variant="secondary"
+						size="lg"
 						icon={<ArrowClockwise />}
 						onClick={reloadPage}
 					>
@@ -430,6 +820,7 @@ function CannotShow({
 					<Button
 						className="w-fit"
 						variant="ghost"
+						size="lg"
 						icon={<X />}
 						loading={sending}
 						onClick={() => void dismiss()}
@@ -482,6 +873,69 @@ export function AskDetail({
 	);
 }
 
+/** A client's name as the person knows it: `claude-code 2.0.31` is Claude Code. */
+export const clientName = (client: string): string =>
+	client
+		.replace(/\s+v?\d[\w.+-]*$/, "")
+		.split(/[-_\s]+/)
+		.filter((word) => word !== "")
+		.map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+		.join(" ");
+
+/** Who asked, where, and when, as a sentence: "Claude Code in billing-api asked 2 min ago". */
+function AskedBy({ ask, now }: { readonly ask: Exclude<Ask, UnknownAsk>; readonly now: number }) {
+	const me = useMe();
+	const who =
+		ask.raisedBy?.name !== undefined && ask.raisedBy.id !== me
+			? `${ask.raisedBy.name}'s agent`
+			: ask.client === undefined
+				? "Your agent"
+				: clientName(ask.client);
+	const when = age(ask.createdAt, now);
+	const verb = ask.kind === "briefing" ? "sent this" : "asked";
+	return (
+		<span className="text-[15px] leading-[22px] text-kumo-subtle">
+			{who}
+			{ask.project === undefined ? null : (
+				<>
+					{" in "}
+					<span className="font-semibold text-kumo-default">{ask.project}</span>
+				</>
+			)}{" "}
+			{verb} {when === "just now" ? when : `${when} ago`}
+		</span>
+	);
+}
+
+/** Whose move it is, in words: orange only when an agent is blocked on the person. */
+function Status({ ask }: { readonly ask: Exclude<Ask, UnknownAsk> }) {
+	if (ask.status === "awaiting_human") {
+		return ask.waiting ? (
+			<span className="inline-flex items-center gap-1.5 text-[15px] leading-[22px] font-semibold text-kumo-brand">
+				<WaitingDot />
+				Waiting for your answer
+			</span>
+		) : null;
+	}
+	return (
+		<span className="inline-flex items-center gap-1.5 text-[15px] leading-[22px] font-medium text-kumo-subtle">
+			<WaitingDot tone="quiet" />
+			{ask.status === "awaiting_agent" ? "Waiting on the agent" : "Closed"}
+		</span>
+	);
+}
+
+/**
+ * The ask, at the size of a headline: a short question or a title reads as the page's heading; a
+ * question long enough to be a paragraph is set smaller, so it stays easy to read.
+ */
+const HEADLINE =
+	"text-[24px] leading-[30px] font-bold tracking-[-0.02em] text-kumo-strong [--prose-leading:30px] md:text-[34px] md:leading-[42px] md:tracking-[-0.025em] md:[--prose-leading:42px]";
+const LONG_QUESTION =
+	"text-[20px] leading-7 font-semibold text-kumo-strong [--prose-leading:28px] md:text-[22px] md:leading-[30px] md:[--prose-leading:30px]";
+const BODY =
+	"text-[16px] text-(--loopback-body) [--prose-leading:24px] md:text-[17px] md:[--prose-leading:28px]";
+
 /** One ask: what the agent wants, the thread so far, and the moves left. */
 function AskView({
 	ask,
@@ -490,86 +944,87 @@ function AskView({
 	readonly ask: Exclude<Ask, UnknownAsk>;
 	readonly onReplied: () => void;
 }) {
-	const { onSelect } = useNavigation();
 	const now = useNow();
-	const me = useMe();
-	const status = STATUS[ask.status];
-	return (
-		<article className="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-6 md:px-8">
-			<header className="flex flex-col gap-3">
-				<button
-					type="button"
-					onClick={() => onSelect(null)}
-					className="inline-flex w-fit items-center gap-1 text-sm text-kumo-subtle md:hidden"
-				>
-					<ArrowLeft /> Inbox
-				</button>
-				<div className="flex flex-wrap items-center gap-2 text-kumo-subtle">
-					<KindIcon ask={ask} />
-					<Badge variant={status.variant}>{status.label}</Badge>
-					{ask.project === undefined ? null : <Badge variant="neutral">{ask.project}</Badge>}
-					<Waiting ask={ask} />
-					<span className="ml-auto text-xs tabular-nums">
-						{ask.raisedBy?.name === undefined || ask.raisedBy.id === me
-							? ""
-							: `${ask.raisedBy.name}'s agent · `}
-						{ask.client === undefined ? "" : `${ask.client} · `}
-						{age(ask.createdAt, now)}
-					</span>
+	const wide = useWide();
+	const content = (
+		<>
+			<header className="flex flex-col">
+				<div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 pb-3 md:justify-start md:pb-4">
+					<AskedBy ask={ask} now={now} />
+					<Status ask={ask} />
 				</div>
 				{ask.kind === "question" ? (
-					<div className="text-lg">
-						<Prose text={ask.prompt.question} />
+					// A question is markdown, and its paragraphs can't sit inside an h1; the role gives it the
+					// heading's place in the page's outline all the same.
+					// oxlint-disable-next-line jsx-a11y/prefer-tag-over-role
+					<div role="heading" aria-level={1}>
+						<Prose
+							text={ask.prompt.question}
+							className={ask.prompt.question.length > 140 ? LONG_QUESTION : HEADLINE}
+						/>
 					</div>
 				) : (
-					<>
-						<Text variant="heading" as="h1">
-							{ask.prompt.title}
-						</Text>
-						{ask.kind !== "review" || ask.revises === undefined ? null : (
-							<AskLink askId={ask.revises} className="text-sm text-kumo-link underline">
-								Revises an earlier review
-							</AskLink>
-						)}
-						{ask.prompt.summary === undefined ? null : (
-							<div className="text-kumo-subtle">
-								<Prose text={ask.prompt.summary} />
-							</div>
-						)}
-					</>
+					<h1 className={HEADLINE}>{ask.prompt.title}</h1>
+				)}
+				{ask.kind !== "review" || ask.revises === undefined ? null : (
+					<AskLink
+						askId={ask.revises}
+						className="pt-2 text-[15px] text-kumo-default underline underline-offset-2"
+					>
+						Revises an earlier review
+					</AskLink>
+				)}
+				{ask.kind === "question" ? (
+					ask.prompt.context === undefined ? null : (
+						<div className="pt-3 md:pt-4">
+							<Prose text={ask.prompt.context} className={BODY} />
+						</div>
+					)
+				) : ask.prompt.summary === undefined ? null : (
+					<div className="pt-3 md:pt-4">
+						<Prose text={ask.prompt.summary} className={BODY} />
+					</div>
 				)}
 			</header>
 
 			{ask.kind === "briefing" ? (
-				<BriefingBody key={ask.id} ask={ask} onReplied={onReplied} />
-			) : ask.kind === "question" ? (
-				ask.prompt.context === undefined ? null : (
-					<details className="rounded-lg border border-kumo-line bg-kumo-base p-4">
-						<summary className="cursor-pointer text-sm text-kumo-subtle">Context</summary>
-						<div className="mt-3">
-							<Prose text={ask.prompt.context} />
-						</div>
-					</details>
-				)
-			) : (
-				<div className="rounded-lg border border-kumo-line bg-kumo-base p-4 md:p-6">
+				<div className="pt-6">
+					<BriefingBody key={ask.id} ask={ask} onReplied={onReplied} />
+				</div>
+			) : ask.kind === "review" ? (
+				<div className="pt-6 text-[17px] md:pt-7">
 					<Blocks blocks={ask.prompt.content} />
 				</div>
-			)}
+			) : null}
 
 			{ask.kind === "briefing" || ask.thread.length === 0 ? null : (
-				<div className="flex flex-col gap-3">
+				<div className="flex flex-col gap-4 pt-8">
 					{ask.thread.map((entry) => (
 						<Turn key={`${entry.author}:${entry.at}`} entry={entry} now={now} />
 					))}
 				</div>
 			)}
+		</>
+	);
 
-			{ask.kind === "briefing" ? null : ask.status === "awaiting_human" ? (
-				<ReplyPanel key={`${ask.id}:${ask.thread.length}`} ask={ask} onReplied={onReplied} />
-			) : ask.status === "awaiting_agent" ? (
-				<Text variant="secondary">The agent has your question and will answer here.</Text>
+	if (ask.kind !== "briefing" && ask.status === "awaiting_human") {
+		return (
+			<Answering key={`${ask.id}:${ask.thread.length}`} ask={ask} onReplied={onReplied} wide={wide}>
+				{content}
+			</Answering>
+		);
+	}
+	return (
+		<Frame bar={wide ? undefined : <PhoneBar items={[]} />}>
+			{content}
+			{ask.kind !== "briefing" && ask.status === "awaiting_agent" ? (
+				<p className="flex items-start gap-2.5 pt-6 text-[17px] leading-[26px] text-kumo-subtle">
+					<span className="flex h-[26px] items-center">
+						<WaitingDot tone="quiet" />
+					</span>
+					<span>The agent has your question and will answer here.</span>
+				</p>
 			) : null}
-		</article>
+		</Frame>
 	);
 }

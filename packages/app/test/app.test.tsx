@@ -14,6 +14,7 @@ import {
 	type WorkspaceSummary,
 } from "../src/index.ts";
 import { loadPage } from "../src/location.ts";
+import { commandParts } from "../src/page.tsx";
 
 vi.mock("../src/location.ts", () => ({ loadPage: vi.fn<(url: string) => void>() }));
 
@@ -28,9 +29,13 @@ const ask = (id: string, question: string): Ask => ({
 	updatedAt: "2026-11-01T10:00:00.000Z",
 });
 
-/** A workspace's space as its client sees it: the asks it holds, live. */
-const clientWith = (open: Ask[], agentSignIn: "oauth" | "token" = "oauth"): LoopbackApi => {
-	const state: InboxState = { status: "live", open, recent: [] };
+/** A workspace's space as its client sees it: the asks it holds, live unless a test says. */
+const clientWith = (
+	open: Ask[],
+	agentSignIn: "oauth" | "token" = "oauth",
+	status: InboxState["status"] = "live",
+): LoopbackApi => {
+	const state: InboxState = { status, open, recent: [] };
 	return {
 		whoami: Effect.succeed({ space: "acme", actor: { id: "ada" } }),
 		snapshot: Effect.die("unused"),
@@ -75,10 +80,12 @@ const deployment = ({
 	preferred,
 	create,
 	agents = "oauth",
+	connection = "live",
 	extensions,
 	continueAt,
 }: {
 	continueAt?: (search: URLSearchParams) => string | undefined;
+	connection?: InboxState["status"];
 	signedIn?: SignedIn | null;
 	workspaces?: WorkspaceSummary[];
 	preferred?: string;
@@ -91,7 +98,7 @@ const deployment = ({
 	const clientFor = vi.fn<(workspace: string) => LoopbackApi>((workspace) => {
 		const client =
 			clients.get(workspace) ??
-			clientWith([ask(`${workspace}-1`, `A question in ${workspace}?`)], agents);
+			clientWith([ask(`${workspace}-1`, `A question in ${workspace}?`)], agents, connection);
 		clients.set(workspace, client);
 		return client;
 	});
@@ -217,38 +224,51 @@ describe("the header", () => {
 		expect(clientFor).toHaveBeenLastCalledWith("beta");
 	});
 
-	it("links to connecting an agent, followed in the app", async () => {
+	it("links to connecting an agent from the person's menu, followed in the app", async () => {
 		const user = userEvent.setup();
 		open(deployment().options, "/w/acme");
-		const connect = await screen.findByRole("link", { name: "Connect an agent" });
-		expect(connect).toHaveAttribute("href", "/w/acme/connect");
-		expect(screen.queryByRole("button", { name: "Connect an agent" })).toBeNull();
-		await user.click(connect);
+		await user.click(await screen.findByRole("button", { name: "Account: Ada" }));
+		await user.click(await screen.findByRole("menuitem", { name: "Connect an agent" }));
 		expect(await screen.findByRole("heading", { name: "Connect an agent" })).toBeInTheDocument();
 		expect(here()).toBe("/w/acme/connect");
 	});
 
 	it("has no workspace menu when there's one workspace and no way to make another", async () => {
 		open(deployment().options, "/w/acme");
-		expect(await screen.findByText("Live")).toBeInTheDocument();
+		expect(await screen.findByRole("button", { name: "Account: Ada" })).toBeInTheDocument();
 		expect(screen.queryByRole("button", { name: "Acme" })).toBeNull();
 	});
 
-	it("signs out with a button of its own when there is nothing else in the person's menu", async () => {
+	it("says nothing about the connection while it's live", async () => {
+		open(deployment().options, "/w/acme");
+		expect(await screen.findByRole("navigation", { name: "Asks" })).toBeInTheDocument();
+		expect(screen.queryByText("Live")).toBeNull();
+		expect(screen.queryByText("Reconnecting")).toBeNull();
+	});
+
+	it("says when the connection is down", async () => {
+		open(deployment({ connection: "reconnecting" }).options, "/w/acme");
+		expect(await screen.findByRole("status")).toHaveTextContent("Reconnecting");
+	});
+
+	it("signs out from the person's menu, though nothing else is in it", async () => {
 		const user = userEvent.setup();
 		const { options, session } = deployment({ signedIn: null });
 		const signOut = vi.fn<() => void>(() => session.set(null));
 		session.set({ signOut });
 		open(options, "/w/acme");
-		await user.click(await screen.findByRole("button", { name: "Sign out" }));
+		await user.click(await screen.findByRole("button", { name: "Account" }));
+		await user.click(await screen.findByRole("menuitem", { name: "Sign out" }));
 		expect(signOut).toHaveBeenCalledOnce();
 		expect(await screen.findByRole("button", { name: /^Sign in/ })).toBeInTheDocument();
 	});
 
 	it("offers no signing out where there is nothing to sign out of", async () => {
+		const user = userEvent.setup();
 		open(deployment({ signedIn: {} }).options, "/w/acme");
-		expect(await screen.findByText("Live")).toBeInTheDocument();
-		expect(screen.queryByRole("button", { name: "Sign out" })).toBeNull();
+		await user.click(await screen.findByRole("button", { name: "Account" }));
+		expect(await screen.findByRole("menuitem", { name: "Connect an agent" })).toBeInTheDocument();
+		expect(screen.queryByRole("menuitem", { name: "Sign out" })).toBeNull();
 	});
 });
 
@@ -263,31 +283,63 @@ describe("a deployment's own", () => {
 		};
 		open(deployment({ extensions }).options, "/w/acme");
 		expect(await screen.findByText("Add a passkey to acme")).toBeInTheDocument();
-		await user.click(screen.getByRole("button", { name: "Ada" }));
+		await user.click(screen.getByRole("button", { name: "Account: Ada" }));
 		await user.click(await screen.findByRole("menuitem", { name: "Your account" }));
 		expect(await screen.findByRole("heading", { name: "Your account" })).toBeInTheDocument();
 		expect(here()).toBe("/account");
 	});
 });
 
+/** Something to copy, found by all of its words, however a narrow screen is allowed to wrap it. */
+const toCopy = (text: string) =>
+	screen.findByText((_, element) => element?.tagName === "P" && element.textContent === text);
+
 describe("connecting an agent", () => {
 	it("says to sign in with OAuth where the server says agents do", async () => {
 		open(deployment({ agents: "oauth" }).options, "/w/acme/connect");
 		expect(
-			await screen.findByText(
-				`claude mcp add --scope user --transport http loopback ${location.origin}/mcp`,
-			),
+			await toCopy(`claude mcp add --scope user --transport http loopback ${location.origin}/mcp`),
 		).toBeInTheDocument();
 		expect(screen.queryByText(/LOOPBACK_TOKEN/)).toBeNull();
 	});
 
 	it("says to send the token where the server says agents do", async () => {
 		open(deployment({ agents: "token" }).options, "/w/acme/connect");
+		const command = `claude mcp add --scope user --transport http loopback ${location.origin}/mcp --header "Authorization: Bearer $LOOPBACK_TOKEN"`;
+		const box = await toCopy(command);
+		// Each part is unbreakable and the spaces between them are not, so a long command wraps.
+		expect([...box.querySelectorAll(".whitespace-nowrap")].map((part) => part.textContent)).toEqual(
+			commandParts(command),
+		);
+	});
+
+	it("copies a command whole, however it is wrapped on screen", async () => {
+		const user = userEvent.setup();
+		open(deployment({ agents: "oauth" }).options, "/w/acme/connect");
+		const [first] = await screen.findAllByRole("button", { name: "Copy" });
+		await user.click(first as HTMLElement);
+		expect(await navigator.clipboard.readText()).toBe(
+			`claude mcp add --scope user --transport http loopback ${location.origin}/mcp`,
+		);
+		expect(await screen.findByRole("button", { name: "Copied" })).toBeInTheDocument();
+	});
+
+	it("breaks a command only between its parts, never inside a flag", () => {
 		expect(
-			await screen.findByText(
-				`claude mcp add --scope user --transport http loopback ${location.origin}/mcp --header "Authorization: Bearer $LOOPBACK_TOKEN"`,
+			commandParts(
+				'claude mcp add --scope user --transport http loopback https://loopback.test/mcp --header "Authorization: Bearer $LOOPBACK_TOKEN"',
 			),
-		).toBeInTheDocument();
+		).toEqual([
+			"claude mcp add",
+			"--scope user",
+			"--transport http",
+			"loopback",
+			"https://loopback.test/mcp",
+			'--header "Authorization: Bearer $LOOPBACK_TOKEN"',
+		]);
+		expect(
+			commandParts("claude plugin install loopback --marketplace LoopBackTools/loopback"),
+		).toEqual(["claude plugin install loopback", "--marketplace LoopBackTools/loopback"]);
 	});
 
 	it.each(["oauth", "token"] as const)(
@@ -295,9 +347,7 @@ describe("connecting an agent", () => {
 		async (agents) => {
 			open(deployment({ agents }).options, "/w/acme/connect");
 			expect(
-				await screen.findByText(
-					"claude plugin install loopback --marketplace LoopBackTools/loopback",
-				),
+				await toCopy("claude plugin install loopback --marketplace LoopBackTools/loopback"),
 			).toBeInTheDocument();
 			expect(
 				screen.getByText(`Connect yourself to Loopback as ${location.origin}/llms.txt says.`),

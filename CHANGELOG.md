@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+The inbox is redesigned for reading and answering, dark and light alike, with contrast well past the
+minimum and no text under 14px. The list wraps titles instead of cutting them off, shows "Agent
+waiting" only when an agent is, and opens the ask beside it as a tab. An ask reads top to bottom:
+who asked, the question or title at headline size, its text and images, then numbered choices and a
+labelled reply. Orange means one thing, that an agent is blocked on you. On a phone the reply sits
+at the bottom of the screen: a composer that grows as you write, or a review's Request changes and
+Approve, with rarer moves under a menu at the top. Commands to connect an agent wrap only between
+their parts. The connection shows only while it is down.
+
+For hosts built on `@loopbacktools/inbox` and `@loopbacktools/app`:
+
+- `Inbox` takes a `header`, drawn at the top of the list. The app's header now goes there: the
+  wordmark, notifications and the person's menu, which holds Connect an agent and Sign out.
+- `Section` is a heading over its content, no longer a card; a dangerous one keeps its red edge.
+- The app's styles set Loopback's type scale (14px at the smallest, 16px inputs) and colours on
+  Kumo's tokens. A primary button marked `data-primary` takes the inverse text colour, so it reads on
+  the light fill dark mode gives it.
+
 ## 0.7.1
 
 - A task's agent stops showing as waiting once its poll takes the reply.

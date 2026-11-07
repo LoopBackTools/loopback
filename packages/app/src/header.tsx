@@ -1,15 +1,27 @@
-import { Button, DropdownMenu, LinkButton, Text } from "@cloudflare/kumo";
+import { Button, DropdownMenu } from "@cloudflare/kumo";
 import { useAttention, useInbox, useNotifications } from "@loopbacktools/inbox";
-import { Bell, BellSlash, CaretDown, Check, Plugs, Plus, SignOut } from "@phosphor-icons/react";
+import {
+	ArrowClockwise,
+	Bell,
+	BellSlash,
+	CaretDown,
+	Check,
+	Plugs,
+	Plus,
+	SignOut,
+	UserCircle,
+} from "@phosphor-icons/react";
 import { useCallback } from "react";
 import { Link, useNavigate } from "react-router";
 import { connectPath, workspacePath } from "./paths.ts";
 import type { MenuItem, SignedIn, WorkspaceSummary } from "./ports.ts";
+import { Wordmark } from "./wordmark.tsx";
 
+/** The connection, only while it isn't live: a dot that says "Live" all day is noise. */
 const CONNECTION = {
-	connecting: { label: "Connecting", tone: "bg-kumo-line" },
-	live: { label: "Live", tone: "bg-kumo-success" },
-	reconnecting: { label: "Reconnecting", tone: "bg-kumo-warning" },
+	connecting: "Connecting",
+	live: null,
+	reconnecting: "Reconnecting",
 } as const;
 
 /** Goes where a menu item goes, or does what it does. */
@@ -47,8 +59,8 @@ function WorkspaceMenu({
 	return (
 		<DropdownMenu>
 			<DropdownMenu.Trigger>
-				<Button variant="ghost" size="sm" icon={<CaretDown />}>
-					{current?.name ?? "Workspace"}
+				<Button variant="ghost" icon={<CaretDown />} className="min-w-0 text-[15px]">
+					<span className="truncate">{current?.name ?? "Workspace"}</span>
 				</Button>
 			</DropdownMenu.Trigger>
 			<DropdownMenu.Content>
@@ -77,14 +89,25 @@ function WorkspaceMenu({
 	);
 }
 
+/** Initials for the avatar: "Zach Bimson" is ZB. */
+const initials = (name: string): string =>
+	name
+		.split(/\s+/)
+		.filter((word) => word !== "")
+		.slice(0, 2)
+		.map((word) => word.charAt(0).toUpperCase())
+		.join("");
+
 /**
- * The person signed in: a menu of the deployment's items and signing out. With no items and no name
- * to show, signing out is a button of its own, and with nothing to sign out of either, there is none.
+ * The person: their avatar, opening the way to connect an agent, the deployment's own items, and
+ * signing out, when there is something to sign out of.
  */
 function AccountMenu({
+	workspace,
 	signedIn,
 	items,
 }: {
+	readonly workspace: string;
 	readonly signedIn: SignedIn;
 	readonly items: readonly MenuItem[];
 }) {
@@ -98,21 +121,37 @@ function AccountMenu({
 					await signOut();
 					await navigate("/");
 				};
-	if (items.length === 0 && name === undefined) {
-		return leave === undefined ? null : (
-			<Button variant="ghost" size="sm" onClick={() => void leave()}>
-				Sign out
-			</Button>
-		);
-	}
 	return (
 		<DropdownMenu>
 			<DropdownMenu.Trigger>
-				<Button variant="ghost" size="sm">
-					{name ?? "Account"}
-				</Button>
+				<Button
+					variant="ghost"
+					shape="square"
+					size="lg"
+					aria-label={name === undefined ? "Account" : `Account: ${name}`}
+					icon={
+						name === undefined ? (
+							<UserCircle size={26} />
+						) : (
+							<span className="flex size-8 items-center justify-center rounded-full bg-kumo-brand text-[14px] font-semibold text-kumo-inverse">
+								{initials(name)}
+							</span>
+						)
+					}
+				/>
 			</DropdownMenu.Trigger>
 			<DropdownMenu.Content>
+				{name === undefined ? null : (
+					<>
+						<DropdownMenu.Group>
+							<DropdownMenu.Label>{name}</DropdownMenu.Label>
+						</DropdownMenu.Group>
+						<DropdownMenu.Separator />
+					</>
+				)}
+				<DropdownMenu.Item icon={Plugs} onClick={() => void navigate(connectPath(workspace))}>
+					Connect an agent
+				</DropdownMenu.Item>
 				{items.map((item) => (
 					<DropdownMenu.Item key={item.label} icon={item.icon} onClick={() => choose(item)}>
 						{item.label}
@@ -120,7 +159,7 @@ function AccountMenu({
 				))}
 				{leave === undefined ? null : (
 					<>
-						{items.length > 0 ? <DropdownMenu.Separator /> : null}
+						<DropdownMenu.Separator />
 						<DropdownMenu.Item icon={SignOut} onClick={() => void leave()}>
 							Sign out
 						</DropdownMenu.Item>
@@ -131,7 +170,10 @@ function AccountMenu({
 	);
 }
 
-/** The bar above a workspace's inbox. */
+/**
+ * The top of the inbox's list: Loopback's wordmark, the workspace where there is a choice, the
+ * connection while it's down, notifications, and the person's menu.
+ */
 export function Header({
 	workspace,
 	signedIn,
@@ -158,10 +200,12 @@ export function Header({
 	useAttention(inbox, notifications.enabled, open);
 	const connection = CONNECTION[inbox.status];
 	return (
-		<header className="flex items-center gap-2 border-b border-kumo-line bg-kumo-base px-4 py-2">
-			<Link to={workspacePath(workspace)} className="flex items-center gap-2">
-				<img src="/favicon.svg" alt="" className="size-6" />
-				<Text bold>Loopback</Text>
+		<header
+			// The wordmark is cut out of the list it sits on: the page's colour on a phone, the list's beside it.
+			className="flex min-h-[72px] items-center gap-2 py-3.5 pr-3 pl-5 [--wordmark-ground:var(--color-kumo-canvas)] md:min-h-[84px] md:pl-7 md:[--wordmark-ground:var(--color-kumo-recessed)]"
+		>
+			<Link to={workspacePath(workspace)} className="shrink-0 rounded-md">
+				<Wordmark />
 			</Link>
 			<WorkspaceMenu
 				workspace={workspace}
@@ -169,27 +213,26 @@ export function Header({
 				items={workspaceItems}
 				create={create}
 			/>
-			<span className="inline-flex items-center gap-1.5 text-xs text-kumo-subtle">
-				<span className={`size-2 rounded-full ${connection.tone}`} />
-				{connection.label}
-			</span>
-			<span className="ml-auto flex items-center gap-1">
-				<LinkButton href={connectPath(workspace)} variant="ghost" size="sm" icon={<Plugs />}>
-					Connect an agent
-				</LinkButton>
+			{connection === null ? null : (
+				<output className="inline-flex items-center gap-1.5 text-[15px] font-medium text-kumo-subtle">
+					<ArrowClockwise size={16} />
+					{connection}
+				</output>
+			)}
+			<span className="ml-auto flex shrink-0 items-center gap-1">
 				{notifications.supported ? (
 					<Button
 						variant="ghost"
-						size="sm"
+						size="lg"
 						shape="square"
 						aria-label={
 							notifications.enabled ? "Turn notifications off" : "Notify me when an agent asks"
 						}
-						icon={notifications.enabled ? <Bell /> : <BellSlash />}
+						icon={notifications.enabled ? <Bell size={22} /> : <BellSlash size={22} />}
 						onClick={() => void notifications.toggle()}
 					/>
 				) : null}
-				<AccountMenu signedIn={signedIn} items={accountItems} />
+				<AccountMenu workspace={workspace} signedIn={signedIn} items={accountItems} />
 			</span>
 		</header>
 	);

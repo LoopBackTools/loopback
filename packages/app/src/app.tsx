@@ -1,12 +1,10 @@
 import {
 	Button,
-	ClipboardText,
 	Empty,
 	type LinkComponentProps,
 	LinkButton,
 	LinkProvider,
 	Loader,
-	Text,
 } from "@cloudflare/kumo";
 import { useAtomValue } from "@effect/atom-react";
 import { Inbox, InboxProvider } from "@loopbacktools/inbox";
@@ -35,7 +33,7 @@ import {
 } from "react-router";
 import { Header } from "./header.tsx";
 import { loadPage } from "./location.ts";
-import { Page, Section } from "./page.tsx";
+import { CopyBox, Page, Section } from "./page.tsx";
 import { askInOldLink, safeNext, workspacePath } from "./paths.ts";
 import type { LoopbackAppOptions, SignedIn as Signed } from "./ports.ts";
 
@@ -85,6 +83,15 @@ const PLUGIN_INSTALL = "claude plugin install loopback --marketplace LoopBackToo
 /** How agents sign in to a client's deployment, as its server says. */
 const agentSignInAtom = Atom.family((client: LoopbackApi) => Atom.make(client.agentSignIn));
 
+/** A line of help under something to copy. */
+function Hint({ children }: { readonly children: ReactNode }) {
+	return (
+		<p className="text-[15px] leading-[22px] text-kumo-subtle md:text-[16px] md:leading-6">
+			{children}
+		</p>
+	);
+}
+
 /** How to connect an agent to a workspace, as the server says its agents sign in. */
 function Connect({
 	workspace,
@@ -109,39 +116,40 @@ function Connect({
 			}
 		>
 			<Section title="Claude Code">
-				<ClipboardText
+				<CopyBox
+					command
 					text={
 						oauth
 							? `claude mcp add --scope user --transport http loopback ${mcp}`
 							: `claude mcp add --scope user --transport http loopback ${mcp} --header "Authorization: Bearer $LOOPBACK_TOKEN"`
 					}
 				/>
-				<Text variant="secondary" size="sm">
+				<Hint>
 					{oauth
 						? "Then run /mcp in Claude Code and sign in when it asks."
 						: "With the token in LOOPBACK_TOKEN, in the shell you run it from."}
-				</Text>
-				<ClipboardText text={PLUGIN_INSTALL} />
-				<Text variant="secondary" size="sm">
+				</Hint>
+				<CopyBox command text={PLUGIN_INSTALL} />
+				<Hint>
 					Then install the plugin, so every question comes here without your having to ask for it.
 					It needs nothing else.
-				</Text>
+				</Hint>
 			</Section>
 			<Section title="Or have your agent do it">
-				<ClipboardText text={`Connect yourself to Loopback as ${origin}/llms.txt says.`} />
-				<Text variant="secondary" size="sm">
+				<CopyBox text={`Connect yourself to Loopback as ${origin}/llms.txt says.`} />
+				<Hint>
 					{oauth
 						? "Paste this to your agent. It sets up what it can, and tells you when to sign in."
 						: "Paste this to your agent. It sets up what it can, and asks you for the token."}
-				</Text>
+				</Hint>
 			</Section>
 			<Section title="Any other MCP client">
-				<ClipboardText text={mcp} />
-				<Text variant="secondary" size="sm">
+				<CopyBox text={mcp} />
+				<Hint>
 					{oauth
 						? "Add it as a remote server over streamable HTTP. It signs in with OAuth."
 						: "Add it as a remote server over streamable HTTP, with the header Authorization: Bearer and the token."}
-				</Text>
+				</Hint>
 			</Section>
 		</Page>
 	);
@@ -259,16 +267,22 @@ export const createLoopbackApp = (options: LoopbackAppOptions): ComponentType =>
 		return (
 			<InboxProvider client={client}>
 				<div className="flex h-full flex-col">
-					<Header
-						workspace={workspace}
-						signedIn={signedIn}
-						workspaces={list}
-						workspaceItems={workspaceMenu?.(workspace) ?? []}
-						accountItems={accountMenu}
-						create={create}
-					/>
 					{Banner === undefined ? null : <Banner workspace={workspace} />}
-					<Inbox selectedId={askId ?? null} onSelect={onSelect} hrefFor={hrefFor} />
+					<Inbox
+						selectedId={askId ?? null}
+						onSelect={onSelect}
+						hrefFor={hrefFor}
+						header={
+							<Header
+								workspace={workspace}
+								signedIn={signedIn}
+								workspaces={list}
+								workspaceItems={workspaceMenu?.(workspace) ?? []}
+								accountItems={accountMenu}
+								create={create}
+							/>
+						}
+					/>
 				</div>
 			</InboxProvider>
 		);

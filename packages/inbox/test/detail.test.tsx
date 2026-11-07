@@ -2,7 +2,7 @@ import type { Ask, Reply } from "@loopbacktools/sdk";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AskDetail } from "../src/detail.tsx";
+import { AskDetail, clientName } from "../src/detail.tsx";
 import { Host } from "./host.tsx";
 
 const base = {
@@ -125,6 +125,111 @@ describe("reviewing work", () => {
 		const user = userEvent.setup();
 		show(review);
 		await user.click(screen.getByRole("button", { name: "Dismiss" }));
+		await waitFor(() => expect(sent).toHaveLength(1));
+		expect(sent[0]?.reply).toEqual({ outcome: "dismissed" });
+	});
+});
+
+/** A screen too narrow for the list and an ask side by side, as a phone's is. */
+const onAPhone = () =>
+	vi.stubGlobal("matchMedia", (query: string) => ({
+		matches: false,
+		media: query,
+		addEventListener: () => {},
+		removeEventListener: () => {},
+	}));
+
+describe("whose move it is", () => {
+	it("says the agent is waiting for an answer, only while it is", () => {
+		show(question);
+		expect(screen.getByText("Waiting for your answer")).toBeInTheDocument();
+		cleanup();
+		show({ ...question, waiting: false });
+		expect(screen.queryByText("Waiting for your answer")).toBeNull();
+	});
+
+	it("says when the agent has the next move, and offers no reply", () => {
+		show({ ...question, status: "awaiting_agent" });
+		expect(screen.getByText("Waiting on the agent")).toBeInTheDocument();
+		expect(
+			screen.getByText("The agent has your question and will answer here."),
+		).toBeInTheDocument();
+		expect(screen.queryByRole("textbox")).toBeNull();
+	});
+});
+
+describe("who asked", () => {
+	it("names the client as the person knows it, without its version", () => {
+		expect(clientName("claude-code 2.0.31")).toBe("Claude Code");
+		expect(clientName("cursor")).toBe("Cursor");
+		expect(clientName("codex v0.4.2")).toBe("Codex");
+	});
+
+	it("says which agent asked, where, and when", () => {
+		show({ ...question, client: "claude-code 2.0.31" });
+		expect(screen.getByText(/^Claude Code in/)).toHaveTextContent(/Claude Code in loopback asked/);
+	});
+});
+
+describe("answering on a phone", () => {
+	it("approves a review in one tap, from the bottom of the screen", async () => {
+		const user = userEvent.setup();
+		onAPhone();
+		show(review);
+		expect(screen.queryByRole("textbox")).toBeNull();
+		await user.click(screen.getByRole("button", { name: "Approve" }));
+		await waitFor(() => expect(sent).toHaveLength(1));
+		expect(sent[0]?.reply).toEqual({ outcome: "approved" });
+	});
+
+	it("opens a box for the changes a review needs, and sends them", async () => {
+		const user = userEvent.setup();
+		onAPhone();
+		show(review);
+		await user.click(screen.getByRole("button", { name: "Request changes" }));
+		const box = screen.getByRole("textbox", { name: "Requesting changes" });
+		const send = screen.getByRole("button", { name: "Send changes" });
+		expect(send).toBeDisabled();
+		await user.type(box, "Warmer, please");
+		await user.click(send);
+		await waitFor(() => expect(sent).toHaveLength(1));
+		expect(sent[0]?.reply).toEqual({ outcome: "changes_requested", feedback: "Warmer, please" });
+	});
+
+	it("backs out of requesting changes to the review's two moves", async () => {
+		const user = userEvent.setup();
+		onAPhone();
+		show(review);
+		await user.click(screen.getByRole("button", { name: "Request changes" }));
+		await user.click(screen.getByRole("button", { name: "Cancel" }));
+		expect(screen.queryByRole("textbox")).toBeNull();
+		expect(screen.getByRole("button", { name: "Approve" })).toBeInTheDocument();
+	});
+
+	it("answers a question in the person's own words, from the box at the bottom", async () => {
+		const user = userEvent.setup();
+		onAPhone();
+		show(question);
+		await user.type(
+			screen.getByRole("textbox", { name: "Your answer, or a note" }),
+			"Europe, then US East",
+		);
+		await user.click(screen.getByRole("button", { name: "Send" }));
+		await waitFor(() => expect(sent).toHaveLength(1));
+		expect(sent[0]?.reply).toEqual({
+			outcome: "answered",
+			selected: [],
+			text: "Europe, then US East",
+		});
+	});
+
+	it("dismisses from the menu at the top, where a rare move belongs", async () => {
+		const user = userEvent.setup();
+		onAPhone();
+		show(question);
+		expect(screen.queryByRole("button", { name: "Dismiss" })).toBeNull();
+		await user.click(screen.getByRole("button", { name: "More" }));
+		await user.click(await screen.findByRole("menuitem", { name: "Dismiss" }));
 		await waitFor(() => expect(sent).toHaveLength(1));
 		expect(sent[0]?.reply).toEqual({ outcome: "dismissed" });
 	});

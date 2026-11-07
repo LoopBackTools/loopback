@@ -29,9 +29,16 @@ const markdownComponents: Components = {
 };
 
 /** Markdown an agent wrote. Links open in a new tab; fenced code is highlighted. */
-export function Prose({ text }: { readonly text: string }) {
+export function Prose({
+	text,
+	className = "text-kumo-default",
+}: {
+	readonly text: string;
+	/** Size, weight and colour: body text by default, or a headline where the text is the ask. */
+	readonly className?: string;
+}) {
 	return (
-		<div className="loopback-markdown text-kumo-default">
+		<div className={`loopback-markdown ${className}`}>
 			<Markdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
 				{text}
 			</Markdown>
@@ -40,11 +47,7 @@ export function Prose({ text }: { readonly text: string }) {
 }
 
 function Caption({ children }: { readonly children: string }) {
-	return (
-		<Text variant="secondary" size="sm">
-			{children}
-		</Text>
-	);
+	return <p className="text-[15px] leading-[22px] text-kumo-subtle">{children}</p>;
 }
 
 function Picture({ uploadId, caption }: { readonly uploadId: string; readonly caption?: string }) {
@@ -59,11 +62,12 @@ function Picture({ uploadId, caption }: { readonly uploadId: string; readonly ca
 		);
 	}
 	return (
-		<a href={result.value} target="_blank" rel="noreferrer noopener">
+		// On a phone the image runs to the screen's edges: a screenshot needs every pixel it can get.
+		<a href={result.value} target="_blank" rel="noreferrer noopener" className="block max-md:-mx-5">
 			<img
 				src={result.value}
 				alt={caption ?? "An image the agent uploaded"}
-				className="max-h-[70vh] max-w-full rounded-lg border border-kumo-line"
+				className="max-h-[70vh] max-w-full rounded-lg border border-(--loopback-edge,var(--color-kumo-line)) max-md:w-full max-md:max-w-none max-md:rounded-none max-md:border-x-0"
 			/>
 		</a>
 	);

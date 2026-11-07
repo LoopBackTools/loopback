@@ -1,8 +1,14 @@
-import { Empty, Loader, Tabs } from "@cloudflare/kumo";
+import { Loader, Tabs } from "@cloudflare/kumo";
 import { ShikiProvider } from "@cloudflare/kumo/code";
 import { awaitingHuman } from "@loopbacktools/sdk";
 import { CheckCircle, Tray } from "@phosphor-icons/react";
-import { type CSSProperties, type KeyboardEvent, type PointerEvent, useRef } from "react";
+import {
+	type CSSProperties,
+	type KeyboardEvent,
+	type PointerEvent,
+	type ReactNode,
+	useRef,
+} from "react";
 import { type InboxNavigation, NavigationContext, RootContext, useInbox } from "./context.tsx";
 import { AskDetail } from "./detail.tsx";
 import {
@@ -89,9 +95,15 @@ function ResizeHandle({
 /**
  * The inbox: every ask in a list, and the one open beside it, answered in place. It fills the
  * element it is drawn in, which needs a height. Which ask is open is the host's to keep, in its
- * own routes or anywhere else, through `selectedId`, `onSelect` and `hrefFor`.
+ * own routes or anywhere else, through `selectedId`, `onSelect` and `hrefFor`. `header` sits at the
+ * top of the list: the host's name, account and the like, which on a phone go with the list.
  */
-export function Inbox({ selectedId, onSelect, hrefFor }: InboxNavigation) {
+export function Inbox({
+	selectedId,
+	onSelect,
+	hrefFor,
+	header,
+}: InboxNavigation & { readonly header?: ReactNode }) {
 	const root = useRef<HTMLDivElement>(null);
 	const everything = useInbox();
 	const me = useMe();
@@ -117,19 +129,25 @@ export function Inbox({ selectedId, onSelect, hrefFor }: InboxNavigation) {
 		<NavigationContext value={{ selectedId, onSelect, hrefFor }}>
 			<RootContext value={root}>
 				<ShikiProvider engine="javascript" languages={[...LANGUAGES]}>
-					<div ref={root} className="flex h-full min-h-0 flex-1 flex-col">
+					<div ref={root} className="flex h-full min-h-0 flex-1 flex-col bg-kumo-canvas">
 						<UpdateBanner />
 						<div className="flex min-h-0 flex-1">
 							<aside
 								style={{ "--sidebar": `${width}px` } as CSSProperties}
-								className={`w-full overflow-y-auto border-r border-kumo-line bg-kumo-base md:block md:w-(--sidebar) md:shrink-0 ${
+								// The edge is a shadow inside the list, not a border, so the open row can paint
+								// over it and read as a tab into the ask beside it.
+								className={`w-full overflow-y-auto bg-kumo-canvas md:block md:w-(--sidebar) md:shrink-0 md:bg-kumo-recessed md:shadow-[inset_-1px_0_0_var(--color-kumo-hairline)] ${
 									selectedId === null ? "" : "hidden"
 								}`}
 							>
+								{header === undefined ? null : (
+									<div className="sticky top-0 z-10 bg-kumo-canvas md:bg-kumo-recessed md:shadow-[inset_-1px_0_0_var(--color-kumo-hairline)]">
+										{header}
+									</div>
+								)}
 								{choosing ? (
-									<div className="border-b border-kumo-hairline px-4 py-2">
+									<div className="px-5 pt-2 pb-4 md:px-7">
 										<Tabs
-											size="sm"
 											value={filter}
 											onValueChange={(value) => setFilter(value as Filter)}
 											tabs={[
@@ -139,45 +157,45 @@ export function Inbox({ selectedId, onSelect, hrefFor }: InboxNavigation) {
 										/>
 									</div>
 								) : null}
-								{inbox.status === "connecting" ? (
-									<div className="flex justify-center p-8">
-										<Loader />
-									</div>
-								) : inbox.open.length === 0 && inbox.recent.length === 0 ? (
-									<Empty
-										icon={<Tray size={32} />}
-										title="Nothing yet"
-										description={
-											inbox === everything
-												? "When an agent asks you something, it appears here."
-												: "When one of your agents asks something, it appears here."
-										}
-									/>
-								) : (
-									<AskList inbox={inbox} selected={focusId} />
-								)}
+								<div className="pt-3">
+									{inbox.status === "connecting" ? (
+										<div className="flex justify-center p-8">
+											<Loader />
+										</div>
+									) : inbox.open.length === 0 && inbox.recent.length === 0 ? (
+										<EmptyState
+											icon={<Tray size={44} weight="duotone" />}
+											title="Nothing yet"
+											description={
+												inbox === everything
+													? "When an agent asks you something, it appears here."
+													: "When one of your agents asks something, it appears here."
+											}
+										/>
+									) : (
+										<AskList inbox={inbox} selected={focusId} />
+									)}
+								</div>
 							</aside>
 							<ResizeHandle width={width} onResize={resize} />
 							<main
-								className={`min-w-0 flex-1 overflow-y-auto md:block ${selectedId === null ? "hidden" : ""}`}
+								className={`min-w-0 flex-1 overflow-y-auto bg-kumo-canvas md:block ${selectedId === null ? "hidden" : ""}`}
 							>
 								{selected !== undefined ? (
 									<AskDetail ask={selected} onReplied={() => advance(selected.id)} />
 								) : selectedId !== null && inbox.status === "live" ? (
-									<Empty
+									<EmptyState
 										title="Not in the inbox"
 										description="This ask is older than the inbox keeps."
 									/>
 								) : (
-									<div className="hidden h-full items-center justify-center md:flex">
+									<div className="hidden h-full items-center justify-center pb-24 md:flex">
 										{allDone ? (
-											<div className="w-full max-w-sm">
-												<Empty
-													icon={<CheckCircle size={32} weight="duotone" />}
-													title="All done"
-													description="Nothing needs you right now."
-												/>
-											</div>
+											<EmptyState
+												icon={<CheckCircle size={48} weight="duotone" />}
+												title="All done"
+												description="Nothing needs you right now. When an agent asks, it appears here."
+											/>
 										) : null}
 									</div>
 								)}
@@ -187,5 +205,26 @@ export function Inbox({ selectedId, onSelect, hrefFor }: InboxNavigation) {
 				</ShikiProvider>
 			</RootContext>
 		</NavigationContext>
+	);
+}
+
+/** A calm, centred message where there is nothing to act on. */
+function EmptyState({
+	icon,
+	title,
+	description,
+}: {
+	readonly icon?: ReactNode;
+	readonly title: string;
+	readonly description: string;
+}) {
+	return (
+		<div className="mx-auto flex max-w-md flex-col items-center gap-3 px-6 py-12 text-center">
+			{icon === undefined ? null : <span className="text-kumo-default">{icon}</span>}
+			<h2 className="pt-2 text-[28px] leading-[34px] font-bold tracking-[-0.02em] text-kumo-strong">
+				{title}
+			</h2>
+			<p className="text-[17px] leading-[26px] text-kumo-subtle">{description}</p>
+		</div>
 	);
 }

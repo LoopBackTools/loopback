@@ -1,5 +1,108 @@
 /*
  * The app's styles. Import this after Tailwind and Kumo's theme, beside the inbox's: it has Tailwind
- * generate the utilities the app's own pages use.
+ * generate the utilities the app's own pages use, and gives Kumo Loopback's type and colours.
  */
 @source "./src";
+
+/*
+ * Nothing smaller than 14px anywhere, and inputs at 16px so a phone doesn't zoom into them. Kumo's
+ * own scale starts at 12px, so its components pick these up too.
+ */
+@theme {
+	--font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+	--text-xs: 14px;
+	--text-xs--line-height: 1.4;
+	--text-sm: 15px;
+	--text-sm--line-height: 1.45;
+	--text-base: 16px;
+	--text-base--line-height: 1.5;
+	--text-lg: 17px;
+	--text-lg--line-height: 1.55;
+}
+
+/*
+ * Colours. Contrast is set well past the minimum: secondary text is 9:1 or better in both modes.
+ * Orange means one thing, that an agent is blocked on the person: `--loopback-waiting` for the dot,
+ * Kumo's brand text colour for the words beside it. Kumo's brand fill is the contrast colour, so a
+ * primary button is white in dark mode and black in light, and focus rings stand out on either.
+ */
+:root,
+:root[data-mode="light"] {
+	--color-kumo-canvas: #ffffff;
+	--color-kumo-base: #ffffff;
+	--color-kumo-elevated: #f7f7f7;
+	--color-kumo-recessed: #f2f2f2;
+	--color-kumo-tint: #ededed;
+	--color-kumo-line: #8a8a8a;
+	--color-kumo-hairline: #d4d4d4;
+	--color-kumo-brand: #0a0a0a;
+	--color-kumo-brand-hover: #262626;
+	--text-color-kumo-default: #0a0a0a;
+	--text-color-kumo-strong: #000000;
+	--text-color-kumo-subtle: #404040;
+	--text-color-kumo-placeholder: #6b6b6b;
+	--text-color-kumo-inactive: #767676;
+	--text-color-kumo-inverse: #ffffff;
+	--text-color-kumo-brand: #9a4300;
+	--text-color-kumo-link: #0a0a0a;
+	--loopback-waiting: #f6821f;
+	--loopback-edge: #adadad;
+	--loopback-body: #262626;
+}
+
+:root[data-mode="dark"] {
+	--color-kumo-canvas: #0a0a0a;
+	--color-kumo-base: #161616;
+	--color-kumo-elevated: #1c1c1c;
+	--color-kumo-recessed: #151515;
+	--color-kumo-tint: #262626;
+	--color-kumo-line: #6b6b6b;
+	--color-kumo-hairline: #2a2a2a;
+	--color-kumo-brand: #f5f5f5;
+	--color-kumo-brand-hover: #ffffff;
+	--text-color-kumo-default: #f5f5f5;
+	--text-color-kumo-strong: #ffffff;
+	--text-color-kumo-subtle: #b5b5b5;
+	--text-color-kumo-placeholder: #9e9e9e;
+	--text-color-kumo-inactive: #8a8a8a;
+	--text-color-kumo-inverse: #0a0a0a;
+	--text-color-kumo-brand: #f6821f;
+	--text-color-kumo-link: #f5f5f5;
+	--loopback-waiting: #f6821f;
+	--loopback-edge: #3d3d3d;
+	--loopback-body: #d9d9d9;
+}
+
+/*
+ * Kumo's primary button always sets white text, which is invisible on the white fill dark mode
+ * gives it. A button marked `data-primary` takes the inverse instead. It is in the base layer because
+ * an important declaration in an earlier layer outranks the one Kumo's utility sets.
+ */
+@layer base {
+	[data-kumo-component="Button"][data-primary],
+	[data-kumo-component="LinkButton"][data-primary] {
+		color: var(--text-color-kumo-inverse) !important;
+	}
+
+	/*
+	 * Kumo edges an empty checkbox in the hairline colour, which dividers use and keep quiet; a
+	 * control needs an edge you can see, and a box big enough to aim at.
+	 */
+	[data-kumo-component="Checkbox"] {
+		width: 20px !important;
+		height: 20px !important;
+		border-radius: 5px !important;
+	}
+	[data-kumo-component="Checkbox"][data-unchecked] {
+		--tw-ring-color: var(--color-kumo-line) !important;
+	}
+
+	/*
+	 * Keyboard focus in the contrast colour, inside the element's edge so a list that scrolls never
+	 * clips it. Kumo's own controls draw their ring; this covers the rows and choices that are ours.
+	 */
+	:where(a, button, [role="button"], summary):focus-visible {
+		outline: 2px solid var(--color-kumo-brand);
+		outline-offset: -2px;
+	}
+}

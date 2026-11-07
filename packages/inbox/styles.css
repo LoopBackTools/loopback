@@ -6,7 +6,7 @@
 
 /* Markdown an agent wrote: quiet, readable prose. */
 .loopback-markdown {
-	line-height: 1.6;
+	line-height: var(--prose-leading, 1.6);
 	overflow-wrap: anywhere;
 }
 .loopback-markdown > * + * {

@@ -1,4 +1,4 @@
-import { Badge, Banner, Button, Checkbox, InputArea, Text } from "@cloudflare/kumo";
+import { Banner, Button, Checkbox, InputArea } from "@cloudflare/kumo";
 import { useAtomSet } from "@effect/atom-react";
 import {
 	ApiError,
@@ -24,7 +24,7 @@ import {
 import { Cause, Exit } from "effect";
 import { useEffect, useState } from "react";
 import { Blocks, Prose } from "./content.tsx";
-import { SEND_KEY, useNow } from "./hooks.ts";
+import { useNow } from "./hooks.ts";
 import { useMe, whoIs } from "./people.ts";
 import { replyAtom } from "./state.ts";
 import { useClient, useInboxKeys } from "./context.tsx";
@@ -116,18 +116,19 @@ const replyFrom = (tree: BriefingTree, drafts: Drafts, finishing: boolean): Poin
 	return items;
 };
 
+/** Whose move a point is: in orange only when it's the person's, as the list marks an agent waiting. */
 const MARKER = {
-	needs_you: { label: "Needs you", variant: "orange" },
-	with_agent: { label: "With the agent", variant: "neutral" },
+	needs_you: { label: "Needs you", tone: "font-semibold text-kumo-brand" },
+	with_agent: { label: "With the agent", tone: "font-medium text-kumo-subtle" },
 } as const;
 
-/** The small uppercase label the inbox gives every group, as the list does "Your turn". */
-const GROUP_LABEL = "text-xs font-medium uppercase tracking-wide text-kumo-subtle";
+/** A heading over a group of points, as the list heads its groups. */
+const GROUP_LABEL = "text-[18px] leading-[26px] font-bold text-kumo-default";
 
 /** A point's number, in the chip a question's choices are numbered with. */
 function PointId({ id }: { readonly id: string }) {
 	return (
-		<span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded border border-kumo-line px-1 text-xs text-kumo-subtle tabular-nums">
+		<span className="flex h-7 min-w-7 shrink-0 items-center justify-center rounded-md border border-kumo-line px-1 text-[15px] font-semibold text-kumo-default tabular-nums">
 			{id}
 		</span>
 	);
@@ -139,12 +140,14 @@ function Marker({ point }: { readonly point: PointNode }) {
 	return (
 		<>
 			{below === 0 ? null : (
-				<span className="hidden text-xs text-kumo-subtle tabular-nums sm:inline">
+				<span className="hidden text-[15px] text-kumo-subtle tabular-nums sm:inline">
 					{below} below
 				</span>
 			)}
 			{point.state === "needs_you" || point.state === "with_agent" ? (
-				<Badge variant={MARKER[point.state].variant}>{MARKER[point.state].label}</Badge>
+				<span className={`text-[15px] leading-[22px] ${MARKER[point.state].tone}`}>
+					{MARKER[point.state].label}
+				</span>
 			) : null}
 		</>
 	);
@@ -153,8 +156,8 @@ function Marker({ point }: { readonly point: PointNode }) {
 /** That a reply is drafted on a point, marked as the list marks an agent waiting. */
 function Drafted() {
 	return (
-		<span className="inline-flex items-center gap-1.5 text-xs text-kumo-subtle">
-			<span className="size-2 rounded-full bg-kumo-brand" />
+		<span className="inline-flex items-center gap-1.5 text-[15px] text-kumo-subtle">
+			<span className="size-2 rounded-full bg-(--text-color-kumo-default)" />
 			<span className="sr-only sm:not-sr-only">Draft</span>
 		</span>
 	);
@@ -194,23 +197,25 @@ function PointItem({ point, shared }: { readonly point: PointNode; readonly shar
 	const drafted = draft.text.trim() !== "" || draft.resolved;
 	const panel = `point-${point.id}`;
 	return (
-		<li id={`row-${point.id}`}>
+		<li id={`row-${point.id}`} className={open ? "bg-kumo-elevated" : ""}>
 			<button
 				type="button"
 				aria-expanded={open}
 				aria-controls={panel}
 				onClick={() => shared.toggle(point.id)}
-				className={`flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-kumo-tint ${
-					open ? "bg-kumo-tint" : ""
-				}`}
+				className="flex min-h-14 w-full items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-kumo-tint"
 			>
-				<span className="shrink-0 text-kumo-subtle">
-					{open ? <CaretDown size={12} /> : <CaretRight size={12} />}
+				<span className="shrink-0 text-kumo-default">
+					{open ? <CaretDown size={16} weight="bold" /> : <CaretRight size={16} weight="bold" />}
 				</span>
 				<PointId id={point.id} />
-				<Text truncate bold={point.state === "needs_you"}>
+				<span
+					className={`min-w-0 flex-1 text-[17px] leading-[25px] text-kumo-default ${
+						point.state === "needs_you" ? "font-semibold" : ""
+					}`}
+				>
 					{point.title}
-				</Text>
+				</span>
 				<span className="ml-auto flex shrink-0 items-center gap-2">
 					{drafted ? <Drafted /> : null}
 					<Marker point={point} />
@@ -220,9 +225,14 @@ function PointItem({ point, shared }: { readonly point: PointNode; readonly shar
 				<section
 					id={panel}
 					aria-label={`${point.id} ${point.title}`}
-					className="flex flex-col gap-3 px-4 pt-1 pb-4 sm:pl-[4.25rem]"
+					className="flex flex-col gap-3 px-4 pt-0 pb-5 sm:pr-5 sm:pl-[84px]"
 				>
-					{point.detail === undefined ? null : <Prose text={point.detail} />}
+					{point.detail === undefined ? null : (
+						<Prose
+							text={point.detail}
+							className="text-[17px] text-(--loopback-body) [--prose-leading:27px]"
+						/>
+					)}
 					{point.content === undefined ? null : <Blocks blocks={point.content} />}
 					{point.turns.map((turn) => (
 						<Turn key={`${turn.author}:${turn.at}`} turn={turn} now={shared.now} />
@@ -241,6 +251,7 @@ function PointItem({ point, shared }: { readonly point: PointNode; readonly shar
 								autoResize
 								minRows={2}
 								maxRows={10}
+								className="text-[17px] leading-[26px]"
 							/>
 							{resolved ? null : (
 								<Checkbox
@@ -275,7 +286,7 @@ function Points({
 	const live = points.filter((point) => point.state !== "resolved");
 	const resolved = points.filter((point) => point.state === "resolved");
 	return (
-		<ul className="divide-y divide-kumo-hairline overflow-hidden rounded-lg border border-kumo-line bg-kumo-base">
+		<ul className="divide-y divide-kumo-hairline overflow-hidden rounded-lg border border-(--loopback-edge) bg-kumo-base">
 			{live.map((point) => (
 				<PointItem key={point.id} point={point} shared={shared} />
 			))}
@@ -285,9 +296,15 @@ function Points({
 						type="button"
 						aria-expanded={showResolved}
 						onClick={() => setShowResolved((shown) => !shown)}
-						className={`flex w-full items-center gap-1.5 px-4 py-2 text-left hover:text-kumo-default ${GROUP_LABEL}`}
+						className="flex min-h-12 w-full items-center gap-3 px-4 text-left text-[16px] font-semibold text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-default"
 					>
-						{showResolved ? <CaretDown size={12} /> : <CaretRight size={12} />}
+						<span className="text-kumo-default">
+							{showResolved ? (
+								<CaretDown size={16} weight="bold" />
+							) : (
+								<CaretRight size={16} weight="bold" />
+							)}
+						</span>
 						Resolved <span className="tabular-nums">· {resolved.length}</span>
 					</button>
 					{showResolved ? (
@@ -409,25 +426,29 @@ export function BriefingBody({
 	return (
 		<div className="flex flex-col gap-6">
 			{needing.length === 0 || !yourMove ? null : (
-				<div className="flex items-center gap-2">
-					<Text variant="secondary" size="sm">
+				<div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+					<span className="inline-flex items-center gap-2 text-[15px] leading-[22px] font-semibold text-kumo-brand">
+						<span
+							aria-hidden
+							className="size-2 rounded-full bg-(--loopback-waiting) shadow-[0_0_0_3px_color-mix(in_oklch,var(--loopback-waiting)_22%,transparent)]"
+						/>
 						{needing.length === 1 ? "1 point needs you" : `${needing.length} points need you`}
-					</Text>
-					<Button size="sm" variant="ghost" icon={<ArrowDown />} onClick={next}>
+					</span>
+					<Button variant="ghost" icon={<ArrowDown />} onClick={next} className="text-[15px]">
 						Next point that needs you
 					</Button>
 				</div>
 			)}
 
 			{tree.sections.map((section, index) => (
-				<section key={section.title ?? `section-${index}`} className="flex flex-col gap-2">
+				<section key={section.title ?? `section-${index}`} className="flex flex-col gap-3">
 					{section.title === undefined ? null : <h2 className={GROUP_LABEL}>{section.title}</h2>}
 					<Points points={section.points} shared={shared} />
 				</section>
 			))}
 
 			{closed ? null : (
-				<div className="sticky bottom-4 flex flex-col gap-3 rounded-lg border border-kumo-line bg-kumo-elevated p-4">
+				<div className="sticky bottom-4 flex flex-col gap-3 rounded-lg border border-(--loopback-edge) bg-kumo-elevated p-3.5 shadow-lg md:px-4">
 					{error === null ? null : (
 						<Banner
 							role="alert"
@@ -439,18 +460,19 @@ export function BriefingBody({
 					)}
 					{yourMove ? (
 						problem === null ? null : (
-							<Text variant="secondary" size="sm">
-								{problem}
-							</Text>
+							<p className="text-[15px] leading-[22px] text-kumo-subtle">{problem}</p>
 						)
 					) : (
-						<Text variant="secondary" size="sm">
+						<p className="text-[15px] leading-[22px] text-kumo-subtle">
 							The agent is answering your replies. You can keep drafting meanwhile.
-						</Text>
+						</p>
 					)}
 					<div className="flex flex-wrap items-center gap-2">
 						<Button
 							variant="primary"
+							data-primary=""
+							size="lg"
+							aria-keyshortcuts="Meta+Enter Control+Enter"
 							icon={finishes ? <Check /> : <PaperPlaneRight />}
 							loading={sending === "send"}
 							disabled={!canSend}
@@ -459,6 +481,7 @@ export function BriefingBody({
 							{sendLabel}
 						</Button>
 						<Button
+							size="lg"
 							icon={<Checks />}
 							loading={sending === "finish"}
 							disabled={busy || !yourMove}
@@ -473,16 +496,15 @@ export function BriefingBody({
 						</Button>
 						<Button
 							variant="ghost"
+							size="lg"
 							icon={<X />}
 							loading={sending === "dismiss"}
 							disabled={busy}
 							onClick={() => void submit("dismiss", { outcome: "dismissed" })}
+							className="ml-auto"
 						>
 							Dismiss
 						</Button>
-						<span className="ml-auto hidden text-xs text-kumo-subtle sm:inline">
-							{SEND_KEY}↵ sends
-						</span>
 					</div>
 				</div>
 			)}
