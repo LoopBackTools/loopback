@@ -1,11 +1,12 @@
 import type { Ask, ToolReply, UploadTicket } from "@loopbacktools/protocol";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
-import { describe, expect, it } from "@effect/vitest";
+import { describe, expect, it, vi } from "@effect/vitest";
 import { abortAllDurableObjects, evictDurableObject, runInDurableObject } from "cloudflare:test";
 import { env, exports } from "cloudflare:workers";
 import { Effect } from "effect";
 import packageJson from "../package.json" with { type: "json" };
 import { DEFAULT_SPACE } from "../src/index.ts";
+import { questionInputSchema } from "../src/generated/schemas.gen.ts";
 import { spaceClient } from "../src/space/rpc.ts";
 import { eraseSpace } from "../src/worker/spaces.ts";
 import { caller } from "./caller.ts";
@@ -717,5 +718,22 @@ describe("listen streams", () => {
 			params: { notifications: {} },
 		});
 		expect(frames[1]).toMatchObject({ id: 1, result: {} });
+	});
+});
+
+describe("tool schemas", () => {
+	it("converts each tool schema to JSON Schema once per isolate", async () => {
+		const converts = vi.spyOn(questionInputSchema["~standard"].jsonSchema, "input");
+		try {
+			const client = await connectWith("auto");
+			await client.listTools();
+			const afterOne = converts.mock.calls.length;
+			await client.listTools();
+			await client.listTools();
+			expect(converts.mock.calls.length).toBe(afterOne);
+			await client.close();
+		} finally {
+			converts.mockRestore();
+		}
 	});
 });

@@ -18,19 +18,10 @@ import {
 } from "@modelcontextprotocol/server";
 import { Effect, Option } from "effect";
 import { z } from "zod";
-import {
-	briefingAnswerInputSchema,
-	briefingInputSchema,
-	followUpInputSchema,
-	inboxLinkSchema,
-	inboxRequestSchema,
-	questionInputSchema,
-	reviewInputSchema,
-	uploadRequestSchema,
-	uploadTicketSchema,
-} from "../generated/schemas.gen.ts";
+import * as generated from "../generated/schemas.gen.ts";
 import type { AskNotFound } from "../domain/errors.ts";
 import { POLL_INTERVALS, pollEvery } from "../domain/polling.ts";
+import { withCachedJsonSchema } from "./schema-cache.ts";
 import type { Delivery, TaskState } from "../space/operations.ts";
 import type { SpaceClient } from "../space/rpc.ts";
 import type { Access } from "./gate.ts";
@@ -40,6 +31,17 @@ import { Spaces } from "./spaces.ts";
 
 /** How long each wait for a reply is held before the tool reports progress and waits again. */
 const LAP_MS = 25_000;
+
+/** The tools' schemas, each converted to JSON Schema once per isolate (./schema-cache.ts). */
+const questionInputSchema = withCachedJsonSchema(generated.questionInputSchema);
+const reviewInputSchema = withCachedJsonSchema(generated.reviewInputSchema);
+const followUpInputSchema = withCachedJsonSchema(generated.followUpInputSchema);
+const briefingInputSchema = withCachedJsonSchema(generated.briefingInputSchema);
+const briefingAnswerInputSchema = withCachedJsonSchema(generated.briefingAnswerInputSchema);
+const inboxRequestSchema = withCachedJsonSchema(generated.inboxRequestSchema);
+const inboxLinkSchema = withCachedJsonSchema(generated.inboxLinkSchema);
+const uploadRequestSchema = withCachedJsonSchema(generated.uploadRequestSchema);
+const uploadTicketSchema = withCachedJsonSchema(generated.uploadTicketSchema);
 
 /** The MCP Tasks extension: a tool call that returns at once and completes later. */
 const TASKS_EXTENSION = "io.modelcontextprotocol/tasks";
