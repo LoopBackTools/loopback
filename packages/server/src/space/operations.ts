@@ -45,7 +45,8 @@ import {
 	UploadNotFound,
 	UploadRejected,
 } from "../domain/errors.ts";
-import { Host, Presence } from "./services.ts";
+import { FOLLOW_SLACK_MS, type PollIntervals, pollEvery } from "../domain/polling.ts";
+import { Host } from "./services.ts";
 import { AskStore, TicketStore, UploadStore } from "./store.ts";
 
 /** How many closed asks a snapshot carries. */
@@ -121,28 +122,34 @@ const noteWaiting = Effect.fnUntraced(function* (record: AskRecord, at: string) 
 	yield* store.touchWaited(record.id, at);
 });
 
-/** Whether an agent is waiting on the ask: blocked on it over a wait socket, or polling it as a task. */
-const isWaiting = Effect.fnUntraced(function* (askId: string) {
+/** Whether an agent polling the ask as a background task still shows as following it at `at`. */
+const followed = (record: AskRecord, at: string) =>
+	record.followedUntil !== null && record.followedUntil > at;
+
+/**
+ * Whether an agent is waiting on the ask: blocked on it over a wait socket, or polling it as a task.
+ * Both are read from what survives the space hibernating: its open sockets, and its storage.
+ */
+const isWaiting = Effect.fnUntraced(function* (record: AskRecord) {
 	const host = yield* Host;
-	const presence = yield* Presence;
-	return host.waiters(askId) > 0 || presence.isWaiting(askId);
+	return host.waiters(record.id) > 0 || followed(record, yield* now);
 });
 
 /** The ask in its wire shape, with its thread and whether an agent is waiting on it. */
 const view = Effect.fnUntraced(function* (record: AskRecord) {
 	const store = yield* AskStore;
-	return toAsk(record, yield* store.thread(record.id), yield* isWaiting(record.id));
+	return toAsk(record, yield* store.thread(record.id), yield* isWaiting(record));
 });
 
 /** The asks in their wire shape, leaving out any whose thread can't be read. */
 const views = Effect.fnUntraced(function* (records: readonly AskRecord[]) {
 	const store = yield* AskStore;
 	const host = yield* Host;
-	const presence = yield* Presence;
+	const at = yield* now;
 	const threads = yield* store.threads(records.map((record) => record.id));
 	return records.flatMap((record) => {
 		const thread = threads.get(record.id);
-		const waiting = host.waiters(record.id) > 0 || presence.isWaiting(record.id);
+		const waiting = host.waiters(record.id) > 0 || followed(record, at);
 		return thread === undefined ? [] : [toAsk(record, thread, waiting)];
 	});
 });
@@ -159,21 +166,38 @@ const announceFollowing = (askId: string) =>
 		Effect.ignoreCause({ log: true }),
 	);
 
-/** A poll begins on the ask; inboxes hear it when that starts the ask being followed. */
-const follow = Effect.fnUntraced(function* (askId: string) {
+/**
+ * A poll on the ask's background task: it shows as followed until its next poll is due, with room
+ * for that poll to be late. The time is written only when less than half of that is left, so quick
+ * polls write at most every other time, and the space is set to wake when it runs out. Inboxes hear
+ * it when that starts the ask being followed.
+ */
+const follow = Effect.fnUntraced(function* (record: AskRecord, followForMs: number) {
+	const store = yield* AskStore;
 	const host = yield* Host;
-	const presence = yield* Presence;
-	if ((yield* presence.begin(askId)) && host.waiters(askId) === 0) yield* announceFollowing(askId);
+	const at = yield* now;
+	const left =
+		record.followedUntil === null ? 0 : Date.parse(record.followedUntil) - Date.parse(at);
+	if (left >= followForMs / 2) return;
+	const until = new Date(Date.parse(at) + followForMs).toISOString();
+	yield* store.followUntil(record.id, until);
+	yield* host.scheduleAlarm(until);
+	if (left <= 0 && host.waiters(record.id) === 0) yield* announceFollowing(record.id);
 });
 
-/** A poll ends; inboxes hear it if no other begins within the grace and no agent is blocked on it. */
-const unfollow = Effect.fnUntraced(function* (askId: string) {
+/**
+ * Wakes on the space's alarm: inboxes hear about every ask whose following ran out, and the space
+ * is set to wake again when the next one runs out.
+ */
+export const expireFollows = Effect.fn("Space.expireFollows")(function* () {
+	const store = yield* AskStore;
 	const host = yield* Host;
-	const presence = yield* Presence;
-	yield* presence.end(
-		askId,
-		Effect.suspend(() => (host.waiters(askId) === 0 ? announceFollowing(askId) : Effect.void)),
-	);
+	for (const askId of yield* store.followsEndedBy(yield* now)) {
+		yield* store.followUntil(askId, null);
+		if (host.waiters(askId) === 0) yield* announceFollowing(askId);
+	}
+	const next = yield* store.nextFollowEnd;
+	if (Option.isSome(next)) yield* host.scheduleAlarm(next.value);
 });
 
 /** Every image the blocks show must be an upload this space holds. */
@@ -239,6 +263,7 @@ export const open = Effect.fn("Space.open")(function* (request: OpenRequest) {
 		updatedAt: at,
 		closedAt: null,
 		lastWaitedAt: at,
+		followedUntil: null,
 	} as const;
 	let record: AskRecord;
 	switch (request.kind) {
@@ -272,7 +297,6 @@ export const open = Effect.fn("Space.open")(function* (request: OpenRequest) {
  */
 export const answerFollowUp = Effect.fn("Space.answerFollowUp")(function* (input: FollowUpInput) {
 	const store = yield* AskStore;
-	const presence = yield* Presence;
 	const record = yield* findAsk(input.askId);
 	if (record.kind === "briefing") {
 		return yield* new ContentInvalid({
@@ -287,7 +311,7 @@ export const answerFollowUp = Effect.fn("Space.answerFollowUp")(function* (input
 			last?.author === "agent" &&
 			last.answer === input.answer &&
 			JSON.stringify(last.content ?? []) === JSON.stringify(input.content ?? []);
-		if (same) return toAsk(record, thread, presence.isWaiting(record.id));
+		if (same) return toAsk(record, thread, yield* isWaiting(record));
 		return yield* new NotYourTurn({ askId: record.id, turn: "human" });
 	}
 	yield* checkSize({ answer: input.answer, content: input.content });
@@ -423,10 +447,10 @@ export const takeReply = Effect.fn("Space.takeReply")(function* (askId: string) 
  */
 export const startWaiting = Effect.fn("Space.startWaiting")(function* (askId: string) {
 	const host = yield* Host;
-	const presence = yield* Presence;
 	const record = yield* findAsk(askId);
-	yield* noteWaiting(record, yield* now);
-	if (host.waiters(askId) === 1 && !presence.isWaiting(askId)) yield* announceFollowing(askId);
+	const at = yield* now;
+	yield* noteWaiting(record, at);
+	if (host.waiters(askId) === 1 && !followed(record, at)) yield* announceFollowing(askId);
 	return (yield* takeReply(askId)) !== null;
 });
 
@@ -437,10 +461,10 @@ export const startWaiting = Effect.fn("Space.startWaiting")(function* (askId: st
 export const stopWaiting = Effect.fn("Space.stopWaiting")(
 	function* (askId: string) {
 		const host = yield* Host;
-		const presence = yield* Presence;
 		const record = yield* findAsk(askId);
-		yield* noteWaiting(record, yield* now);
-		if (host.waiters(askId) === 0 && !presence.isWaiting(askId)) yield* announceFollowing(askId);
+		const at = yield* now;
+		yield* noteWaiting(record, at);
+		if (host.waiters(askId) === 0 && !followed(record, at)) yield* announceFollowing(askId);
 	},
 	Effect.catchTag("AskNotFound", () => Effect.void),
 );
@@ -504,6 +528,7 @@ const locateTask = Effect.fnUntraced(function* (askId: string, afterSeq: number)
 export const followTask = Effect.fn("Space.followTask")(function* (
 	askId: string,
 	afterSeq: number,
+	intervals: PollIntervals,
 ) {
 	const store = yield* AskStore;
 	const { record, startedAt, answer } = yield* locateTask(askId, afterSeq);
@@ -527,9 +552,9 @@ export const followTask = Effect.fn("Space.followTask")(function* (
 		};
 		return state;
 	}
-	yield* follow(askId);
-	yield* unfollow(askId);
-	yield* noteWaiting(record, yield* now);
+	const at = yield* now;
+	yield* follow(record, pollEvery(startedAt, Date.parse(at), intervals) + FOLLOW_SLACK_MS);
+	yield* noteWaiting(record, at);
 	const state: TaskState = {
 		status: "working",
 		createdAt: startedAt,
@@ -548,8 +573,8 @@ export const cancelTask = Effect.fn("Space.cancelTask")(function* (
 	afterSeq: number,
 ) {
 	const store = yield* AskStore;
-	const presence = yield* Presence;
-	const { startedAt, answer } = yield* locateTask(askId, afterSeq);
+	const host = yield* Host;
+	const { record, startedAt, answer } = yield* locateTask(askId, afterSeq);
 	if (answer !== undefined) {
 		const state: TaskState = {
 			status: "completed",
@@ -561,7 +586,10 @@ export const cancelTask = Effect.fn("Space.cancelTask")(function* (
 	}
 	const at = yield* now;
 	yield* store.cancelTask(askId, afterSeq, at);
-	if (yield* presence.drop(askId)) yield* announceFollowing(askId);
+	if (followed(record, at)) {
+		yield* store.followUntil(askId, null);
+		if (host.waiters(askId) === 0) yield* announceFollowing(askId);
+	}
 	const state: TaskState = {
 		status: "cancelled",
 		createdAt: startedAt,

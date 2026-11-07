@@ -5,7 +5,7 @@ import { DurableObject } from "cloudflare:workers";
 import { Effect, Exit, Layer, Logger, ManagedRuntime } from "effect";
 import { readArguments } from "./arguments.ts";
 import { migrations } from "./migrations.ts";
-import { operations, snapshot, startWaiting, stopWaiting } from "./operations.ts";
+import { expireFollows, operations, snapshot, startWaiting, stopWaiting } from "./operations.ts";
 import {
 	buildOf,
 	type Caller,
@@ -17,7 +17,7 @@ import {
 	REPLY_FRAME,
 	type SpaceFailure,
 } from "./rpc.ts";
-import { Host, Presence } from "./services.ts";
+import { Host } from "./services.ts";
 import { AskStore, TicketStore, UploadStore } from "./store.ts";
 
 /** The subprotocol an inbox speaks on the event socket. */
@@ -49,7 +49,7 @@ const WAIT_PATH = /^\/wait\/([^/]+)$/;
 /** The close code an inbox reconnects after when the space is now on other code: Service Restart. */
 const RECONNECT_ONTO_NEW_CODE = 1012;
 
-type SpaceServices = AskStore | UploadStore | TicketStore | Host | Presence;
+type SpaceServices = AskStore | UploadStore | TicketStore | Host;
 
 /**
  * One space: its asks, their threads, upload tickets, and the inboxes watching it. Everything it
@@ -79,13 +79,19 @@ export class Space extends DurableObject {
 				broadcast: (event) => this.#broadcast(event),
 				wake: (askId) => this.#wake(askId),
 				waiters: (askId) => this.#waiters(askId).length,
+				scheduleAlarm: (at) =>
+					Effect.promise(async () => {
+						const due = Date.parse(at);
+						const set = await this.ctx.storage.getAlarm();
+						if (set === null || due < set) await this.ctx.storage.setAlarm(due);
+					}),
 				spaceId: this.ctx.id.toString(),
 			}),
 		);
 		return ManagedRuntime.make(
 			Layer.mergeAll(AskStore.layer, UploadStore.layer, TicketStore.layer, migrations).pipe(
 				Layer.provide(sql),
-				Layer.merge(Layer.mergeAll(host, Presence.layer)),
+				Layer.merge(host),
 				Layer.merge(Logger.layer([Logger.consoleJson])),
 				Layer.orDie,
 			),
@@ -234,6 +240,11 @@ export class Space extends DurableObject {
 		}
 		if (started) server.send(REPLY_FRAME);
 		return new Response(null, { status: 101, webSocket: client });
+	}
+
+	/** Wakes when a background task's following runs out, to tell inboxes its agent has gone. */
+	override async alarm(): Promise<void> {
+		await this.#runtime.runPromise(expireFollows());
 	}
 
 	/**

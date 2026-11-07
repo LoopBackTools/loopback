@@ -7,14 +7,13 @@ import type {
 	ServerEvent,
 } from "@loopbacktools/protocol";
 import { describe, expect, it } from "@effect/vitest";
-import { evictDurableObject, runInDurableObject } from "cloudflare:test";
+import { evictDurableObject, runDurableObjectAlarm, runInDurableObject } from "cloudflare:test";
 import { exports } from "cloudflare:workers";
 import { Cause, Effect, Exit } from "effect";
-import { TestClock } from "effect/testing";
 import { REATTACH_WINDOW_MS } from "../src/domain/ask.ts";
 import { AskNotFound } from "../src/domain/errors.ts";
 import { spaceClient } from "../src/space/rpc.ts";
-import { PRESENCE_GRACE_MS, Presence } from "../src/space/services.ts";
+import { POLL_INTERVALS } from "../src/domain/polling.ts";
 import { caller } from "./caller.ts";
 
 /** Who asks and replies in these tests, as the token gate names its one person. */
@@ -387,11 +386,11 @@ describe("asks", () => {
 			);
 			const recently = new Date(Date.now() - 30_000).toISOString();
 			yield* waitedAt(recently);
-			yield* space.followTask(ask.id, 0);
+			yield* space.followTask(ask.id, 0, POLL_INTERVALS);
 			expect(yield* lastWaited).toBe(recently);
 			const earlier = new Date(Date.now() - 90_000).toISOString();
 			yield* waitedAt(earlier);
-			yield* space.followTask(ask.id, 0);
+			yield* space.followTask(ask.id, 0, POLL_INTERVALS);
 			expect(yield* lastWaited).not.toBe(earlier);
 		}),
 	);
@@ -444,36 +443,84 @@ describe("asks", () => {
 });
 
 describe("presence", () => {
-	it.effect("shows an agent gone only once a grace passes with no lap or poll", () =>
+	/** When the space holds an ask followed until, read from its storage. */
+	const followedUntil = (stub: DurableObjectStub, askId: string) =>
+		Effect.promise(() =>
+			runInDurableObject(
+				stub,
+				(_object, state) =>
+					state.storage.sql
+						.exec<{ followed_until: string | null }>(
+							"SELECT followed_until FROM asks WHERE id = ?",
+							askId,
+						)
+						.one().followed_until,
+			),
+		);
+	const followUntil = (stub: DurableObjectStub, askId: string, at: number) =>
+		Effect.promise(() =>
+			runInDurableObject(stub, (_object, state) => {
+				state.storage.sql.exec(
+					"UPDATE asks SET followed_until = ? WHERE id = ?",
+					new Date(at).toISOString(),
+					askId,
+				);
+			}),
+		);
+
+	it.live("shows a task followed until its grace passes, then tells the inbox", () =>
 		Effect.gen(function* () {
-			const presence = yield* Presence;
-			const gone: string[] = [];
-			const leaves = (askId: string) => Effect.sync(() => void gone.push(askId));
+			const { stub, space } = fresh();
+			const ask = yield* space.open({ actor: OWNER, kind: "question", input: colour });
+			const inbox = yield* Effect.promise(() => connect(stub));
+			yield* space.followTask(ask.id, 0, POLL_INTERVALS);
+			expect((yield* space.get(ask.id)).waiting).toBe(true);
+			yield* followUntil(stub, ask.id, Date.now() - 1_000);
+			expect(yield* Effect.promise(() => runDurableObjectAlarm(stub))).toBe(true);
+			expect((yield* space.get(ask.id)).waiting).toBe(false);
+			expect(inbox.frames.at(-1)).toMatchObject({
+				type: "ask.updated",
+				ask: { id: ask.id, waiting: false },
+			});
+			inbox.socket.close();
+		}),
+	);
 
-			expect(yield* presence.begin("a")).toBe(true);
-			yield* presence.end("a", leaves("a"));
-			yield* TestClock.adjust(PRESENCE_GRACE_MS - 1);
-			expect(presence.isWaiting("a")).toBe(true);
-			yield* TestClock.adjust(1);
-			expect(presence.isWaiting("a")).toBe(false);
-			expect(gone).toEqual(["a"]);
+	it.live("writes followed_until at most once for two quick polls", () =>
+		Effect.gen(function* () {
+			const { stub, space } = fresh();
+			const ask = yield* space.open({ actor: OWNER, kind: "question", input: colour });
+			yield* space.followTask(ask.id, 0, POLL_INTERVALS);
+			const first = yield* followedUntil(stub, ask.id);
+			expect(first).not.toBeNull();
+			yield* Effect.sleep("10 millis");
+			yield* space.followTask(ask.id, 0, POLL_INTERVALS);
+			expect(yield* followedUntil(stub, ask.id)).toBe(first);
+		}),
+	);
 
-			// A poll inside the grace keeps the agent there, and starts nothing new.
-			yield* presence.begin("b");
-			yield* presence.end("b", leaves("b"));
-			yield* TestClock.adjust(PRESENCE_GRACE_MS / 2);
-			expect(yield* presence.begin("b")).toBe(false);
-			yield* TestClock.adjust(PRESENCE_GRACE_MS * 3);
-			expect(presence.isWaiting("b")).toBe(true);
-			expect(gone).toEqual(["a"]);
+	it.live("keeps a task followed across hibernation", () =>
+		Effect.gen(function* () {
+			const { stub, space } = fresh();
+			const ask = yield* space.open({ actor: OWNER, kind: "question", input: colour });
+			yield* space.followTask(ask.id, 0, POLL_INTERVALS);
+			yield* Effect.promise(() => evictDurableObject(stub));
+			expect((yield* space.get(ask.id)).waiting).toBe(true);
+		}),
+	);
 
-			// An agent that says it stopped is gone at once, with no grace.
-			yield* presence.end("b", leaves("b"));
-			expect(yield* presence.drop("b")).toBe(true);
-			expect(presence.isWaiting("b")).toBe(false);
-			yield* TestClock.adjust(PRESENCE_GRACE_MS);
-			expect(gone).toEqual(["a"]);
-		}).pipe(Effect.provide(Presence.layer)),
+	it.live("shows a task polled every 30 s as followed between polls", () =>
+		Effect.gen(function* () {
+			const { stub, space } = fresh();
+			const ask = yield* space.open({ actor: OWNER, kind: "question", input: colour });
+			const polledAt = Date.now();
+			yield* space.followTask(ask.id, 0, [30_000, 30_000, 30_000]);
+			const until = Date.parse((yield* followedUntil(stub, ask.id)) ?? "");
+			// Followed past the next poll, 30 s on, with room for it to be late.
+			expect(until - polledAt).toBeGreaterThanOrEqual(39_000);
+			yield* followUntil(stub, ask.id, Date.now() + 9_000);
+			expect((yield* space.get(ask.id)).waiting).toBe(true);
+		}),
 	);
 });
 

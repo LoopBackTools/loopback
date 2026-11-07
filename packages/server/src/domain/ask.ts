@@ -41,6 +41,8 @@ interface AskHead {
 	readonly closedAt: string | null;
 	/** The last time an agent call was blocked on this ask. */
 	readonly lastWaitedAt: string | null;
+	/** Until when an agent polling it as a background task shows as following it, if one is. */
+	readonly followedUntil: string | null;
 }
 
 /** One turn of a thread as stored, with whether a human reply has been handed to an agent. */

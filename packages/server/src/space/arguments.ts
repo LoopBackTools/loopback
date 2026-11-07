@@ -32,7 +32,7 @@ const taking = {
 	answerBriefing: Schema.Tuple([Contract.BriefingAnswerInput]),
 	takeReply: Schema.Tuple([Id]),
 	markDelivered: Schema.Tuple([Id, Count]),
-	followTask: Schema.Tuple([Id, Count]),
+	followTask: Schema.Tuple([Id, Count, Schema.Tuple([Count, Count, Count])]),
 	cancelTask: Schema.Tuple([Id, Count]),
 	reply: Schema.Tuple([Id, Contract.Reply, Contract.Actor]),
 	get: Schema.Tuple([Id]),

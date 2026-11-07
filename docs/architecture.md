@@ -121,9 +121,11 @@ leaves the reply for the caller's retry.
 Either way, everything is stored in SQLite. The Worker's calls into a space are retried on a fresh
 stub when Cloudflare marks a failure retryable, as a reset by a deploy is, and the operation is safe
 to run twice; a reply is not, so a refused one is the inbox's to send again. While polls or laps
-arrive, or while a wait socket is open, the ask shows **agent waiting** in the inbox. Ten seconds
-after polls stop, at once when a task is cancelled, and at once when the last wait socket closes,
-it shows that the agent has gone. Replying is still possible, and the reply is
+arrive, or while a wait socket is open, the ask shows **agent waiting** in the inbox. A poll shows
+the ask followed until its next poll is due, plus ten seconds, kept in the space's storage with an
+alarm set for when it runs out, so the space can sleep between polls. When that runs out, at once
+when a task is cancelled, and at once when the last wait socket closes, it shows that the agent has
+gone. Replying is still possible, and the reply is
 kept.
 
 A retried call (the same question or review, from the same client and project) **rejoins** the ask

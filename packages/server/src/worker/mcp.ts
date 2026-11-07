@@ -30,6 +30,7 @@ import {
 	uploadTicketSchema,
 } from "../generated/schemas.gen.ts";
 import type { AskNotFound } from "../domain/errors.ts";
+import { POLL_INTERVALS, pollEvery } from "../domain/polling.ts";
 import type { Delivery, TaskState } from "../space/operations.ts";
 import type { SpaceClient } from "../space/rpc.ts";
 import type { Access } from "./gate.ts";
@@ -42,15 +43,6 @@ const LAP_MS = 25_000;
 
 /** The MCP Tasks extension: a tool call that returns at once and completes later. */
 const TASKS_EXTENSION = "io.modelcontextprotocol/tasks";
-
-/**
- * How often a client should poll a task: the most a reply waits before the agent sees it. Briskly
- * while a quick answer is likely, then less often, since each poll is a request to the space.
- */
-const pollEvery = (startedAt: string, now: number): number => {
-	const age = now - Date.parse(startedAt);
-	return age < 2 * 60_000 ? 2_000 : age < 30 * 60_000 ? 10_000 : 30_000;
-};
 
 export const INSTRUCTIONS = `Loopback puts what you need from the person you are working for in front of them, in a live inbox, and hands their reply back to you as the tool result.
 
@@ -398,7 +390,7 @@ const server = ({ runtime, access, origin, requestId, inboxUrl }: McpCaller) => 
 	const taskParams = z.object({ taskId: z.string() });
 
 	mcp.server.setRequestHandler("tasks/get", { params: taskParams }, ({ taskId }, ctx) =>
-		task(ctx, taskId, (space, askId, turn) => space.followTask(askId, turn)),
+		task(ctx, taskId, (space, askId, turn) => space.followTask(askId, turn, POLL_INTERVALS)),
 	);
 
 	mcp.server.setRequestHandler("tasks/cancel", { params: taskParams }, async ({ taskId }, ctx) => {
@@ -409,7 +401,7 @@ const server = ({ runtime, access, origin, requestId, inboxUrl }: McpCaller) => 
 	// Loopback's tasks never ask the client for input, so there is nothing to update: input
 	// responses a server does not recognise are ignored.
 	mcp.server.setRequestHandler("tasks/update", { params: taskParams }, async ({ taskId }, ctx) => {
-		await task(ctx, taskId, (space, askId, turn) => space.followTask(askId, turn));
+		await task(ctx, taskId, (space, askId, turn) => space.followTask(askId, turn, POLL_INTERVALS));
 		return {};
 	});
 

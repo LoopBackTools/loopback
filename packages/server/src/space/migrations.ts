@@ -104,5 +104,11 @@ export const migrations = SqliteMigrator.layer({
 			yield* sql`ALTER TABLE asks ADD COLUMN revision INTEGER NOT NULL DEFAULT 1`;
 			yield* sql`ALTER TABLE entries ADD COLUMN revision INTEGER NOT NULL DEFAULT 1`;
 		}),
+		"0007_followed_until": Effect.gen(function* () {
+			const sql = yield* SqlClient.SqlClient;
+			// Until when an agent polling an ask as a background task shows as following it. Kept in
+			// storage, not memory, so it survives the space hibernating between polls.
+			yield* sql`ALTER TABLE asks ADD COLUMN followed_until TEXT`;
+		}),
 	}),
 });

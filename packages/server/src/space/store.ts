@@ -29,6 +29,7 @@ interface AskRow {
 	readonly updatedAt: string;
 	readonly closedAt: string | null;
 	readonly lastWaitedAt: string | null;
+	readonly followedUntil: string | null;
 }
 
 interface EntryRow {
@@ -66,6 +67,7 @@ const askOf = (row: AskRow): Result.Result<AskRecord, string> =>
 			updatedAt: row.updatedAt,
 			closedAt: row.closedAt,
 			lastWaitedAt: row.lastWaitedAt,
+			followedUntil: row.followedUntil,
 		};
 		switch (row.kind) {
 			case "question": {
@@ -126,6 +128,12 @@ export class AskStore extends Context.Service<
 		readonly insert: (record: AskRecord) => Effect.Effect<void>;
 		readonly setStatus: (id: string, status: AskStatus, at: string) => Effect.Effect<void>;
 		readonly touchWaited: (id: string, at: string) => Effect.Effect<void>;
+		/** Shows a task's agent following the ask until `until`; `null` shows it gone. */
+		readonly followUntil: (id: string, until: string | null) => Effect.Effect<void>;
+		/** The asks whose following ran out at or before `at`. */
+		readonly followsEndedBy: (at: string) => Effect.Effect<string[]>;
+		/** When the soonest following still running runs out, if any is. */
+		readonly nextFollowEnd: Effect.Effect<Option.Option<string>>;
 		/** An ask's thread. One holding an entry this code can't read is a defect. */
 		readonly thread: (id: string) => Effect.Effect<EntryRecord[]>;
 		/** The threads of several asks, leaving out each ask whose thread this code can't read. */
@@ -176,7 +184,7 @@ export class AskStore extends Context.Service<
 			const columns = sql.literal(`
 				id, kind, key, status, prompt, project, client, raised_by AS raisedBy, revises,
 				created_at AS createdAt, updated_at AS updatedAt, closed_at AS closedAt,
-				last_waited_at AS lastWaitedAt
+				last_waited_at AS lastWaitedAt, followed_until AS followedUntil
 			`);
 			const entryColumns = sql.literal(
 				"ask_id AS askId, seq, body, delivered_at AS deliveredAt, revision",
@@ -237,6 +245,7 @@ export class AskStore extends Context.Service<
 						updated_at: record.updatedAt,
 						closed_at: record.closedAt,
 						last_waited_at: record.lastWaitedAt,
+						followed_until: record.followedUntil,
 						revision: REVISION,
 					})}`.pipe(Effect.asVoid, Effect.orDie),
 
@@ -255,6 +264,27 @@ export class AskStore extends Context.Service<
 						Effect.asVoid,
 						Effect.orDie,
 					),
+
+				followUntil: (id, until) =>
+					sql`UPDATE asks SET followed_until = ${until} WHERE id = ${id}`.pipe(
+						Effect.asVoid,
+						Effect.orDie,
+					),
+
+				followsEndedBy: (at) =>
+					sql<{ readonly id: string }>`
+						SELECT id FROM asks WHERE followed_until IS NOT NULL AND followed_until <= ${at}
+					`.pipe(
+						Effect.map((rows) => rows.map((row) => row.id)),
+						Effect.orDie,
+					),
+
+				nextFollowEnd: sql<{ readonly until: string | null }>`
+					SELECT MIN(followed_until) AS until FROM asks WHERE followed_until IS NOT NULL
+				`.pipe(
+					Effect.map((rows) => Option.fromNullishOr(rows[0]?.until)),
+					Effect.orDie,
+				),
 
 				thread: (id) =>
 					sql<EntryRow>`SELECT ${entryColumns} FROM entries WHERE ask_id = ${id} ORDER BY seq`.pipe(
