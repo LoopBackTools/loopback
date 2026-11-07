@@ -85,9 +85,11 @@ secrets file and deploy with `--secrets-file` again.
 
 ## Free or Paid
 
-Loopback can run on Cloudflare's Workers Free plan, which holds each request to 10 ms of CPU and
-tolerates the odd request that goes over. A deployment says which plan it is on with
-`LOOPBACK_PLAN` when it is deployed:
+Loopback is built to run on Cloudflare's Workers Free plan, which holds each request to 10 ms of
+CPU. Most of its requests take 2 to 9 ms. The first request a fresh isolate serves, and a blocking
+question, take 20 to 65 ms: a copy held to 10 ms on Workers Paid let every one of them through,
+but Free itself hasn't been measured. A deployment says which plan it is on with `LOOPBACK_PLAN`
+when it is deployed:
 
 ```sh
 LOOPBACK_PLAN=paid pnpm run deploy
@@ -111,7 +113,8 @@ LOOPBACK_URL=https://loopback-cpu-check.<your-subdomain>.workers.dev LOOPBACK_TO
 pnpm --filter loopback exec node scripts/cpu-report.ts loopback-cpu-check <when the check began>
 ```
 
-Delete the copy afterwards with `pnpm --filter loopback exec cf workers delete loopback-cpu-check`.
+Delete the copy afterwards with `pnpm --filter loopback exec cf workers delete loopback-cpu-check`,
+then empty and delete its bucket, `loopback-cpu-check-files`.
 
 ## Connect an agent
 
