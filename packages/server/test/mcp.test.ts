@@ -1,12 +1,13 @@
 import type { Ask, ToolReply, UploadTicket } from "@loopbacktools/protocol";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { describe, expect, it } from "@effect/vitest";
-import { abortAllDurableObjects, runInDurableObject } from "cloudflare:test";
+import { abortAllDurableObjects, evictDurableObject, runInDurableObject } from "cloudflare:test";
 import { env, exports } from "cloudflare:workers";
 import { Effect } from "effect";
 import packageJson from "../package.json" with { type: "json" };
 import { DEFAULT_SPACE } from "../src/index.ts";
 import { spaceClient } from "../src/space/rpc.ts";
+import { eraseSpace } from "../src/worker/spaces.ts";
 import { caller } from "./caller.ts";
 
 const ORIGIN = "https://loopback.test";
@@ -552,7 +553,14 @@ describe.each<Era>(["legacy", "auto"])("the MCP endpoint (%s negotiation)", (mod
 		stop.abort();
 		await expect(call).rejects.toThrow();
 		expect((await Effect.runPromise(space.get(ask.id))).status).toBe("awaiting_human");
+		// Once the agent's connection goes, the inbox stops showing it waiting at once, with no grace.
 		await client.close();
+		let waiting = true;
+		for (let tries = 0; waiting && tries < 50; tries += 1) {
+			waiting = (await Effect.runPromise(space.get(ask.id))).waiting;
+			if (waiting) await pause(20);
+		}
+		expect(waiting).toBe(false);
 	});
 
 	it("keeps a reply given while the agent's wait was cut off, for its retry", async () => {
@@ -577,7 +585,7 @@ describe.each<Era>(["legacy", "auto"])("the MCP endpoint (%s negotiation)", (mod
 		await back.close();
 	});
 
-	it("loses nothing when a restart of its space cuts a wait short", async () => {
+	it("carries a wait through a restart of its space", async () => {
 		const client = await connect();
 		const input = { question: `Through a restart (${mode})?`, project: "mcp-test" };
 		const call = client.callTool({ name: "ask_question", arguments: input });
@@ -585,18 +593,68 @@ describe.each<Era>(["legacy", "auto"])("the MCP endpoint (%s negotiation)", (mod
 			(open) => open.kind === "question" && open.prompt.question === input.question,
 		);
 		await pause(300);
-		// In-memory state gone and in-flight calls refused, without the retryable mark a deploy's
-		// reset carries: the wait ends, and says only what to quote.
+		// In-memory state gone and every socket dropped: the wait reconnects and carries on.
 		await abortAllDurableObjects();
-		const cut = await call;
-		expect(cut.isError).toBe(true);
-		expect(textOf(cut)).toMatch(/^Something went wrong in Loopback\. Incident \S+\.$/);
+		await pause(300);
 		await reply(ask.id, { outcome: "answered", selected: [], text: "Made it" });
-		const retried = await client.callTool({ name: "ask_question", arguments: input });
-		expect(retried.structuredContent).toEqual({
+		expect((await call).structuredContent).toEqual({
 			askId: ask.id,
 			reply: { outcome: "answered", selected: [], text: "Made it" },
 		});
+		await client.close();
+	});
+
+	it("carries a wait through its space moving onto new code", async () => {
+		const client = await connect();
+		const input = { question: `Onto new code (${mode})?`, project: "mcp-test" };
+		const call = client.callTool({ name: "ask_question", arguments: input });
+		const ask = await opened(
+			(open) => open.kind === "question" && open.prompt.question === input.question,
+		);
+		await pause(300);
+		await runInDurableObject(stub(), (_object, state) => {
+			for (const socket of state.getWebSockets(`wait:${ask.id}`)) {
+				socket.close(1012, "Loopback was updated.");
+			}
+		});
+		await pause(300);
+		await reply(ask.id, { outcome: "answered", selected: [], text: "Still here" });
+		expect((await call).structuredContent).toEqual({
+			askId: ask.id,
+			reply: { outcome: "answered", selected: [], text: "Still here" },
+		});
+		await client.close();
+	});
+
+	it("hands a waiting agent its reply after the space hibernates", async () => {
+		const client = await connect();
+		const input = { question: `Asleep (${mode})?`, project: "mcp-test" };
+		const call = client.callTool({ name: "ask_question", arguments: input });
+		const ask = await opened(
+			(open) => open.kind === "question" && open.prompt.question === input.question,
+		);
+		await pause(300);
+		await evictDurableObject(stub());
+		const at = Date.now();
+		await reply(ask.id, { outcome: "answered", selected: [], text: "Awake" });
+		expect((await call).structuredContent).toEqual({
+			askId: ask.id,
+			reply: { outcome: "answered", selected: [], text: "Awake" },
+		});
+		expect(Date.now() - at).toBeLessThan(3_000);
+		await client.close();
+	});
+
+	it("ends a wait whose ask is erased with an incident", async () => {
+		const client = await connect();
+		const input = { question: `Erased (${mode})?`, project: "mcp-test" };
+		const call = client.callTool({ name: "ask_question", arguments: input });
+		await opened((open) => open.kind === "question" && open.prompt.question === input.question);
+		await pause(300);
+		await eraseSpace(env, DEFAULT_SPACE);
+		const cut = await call;
+		expect(cut.isError).toBe(true);
+		expect(textOf(cut)).toMatch(/^Something went wrong in Loopback\. Incident \S+\.$/);
 		await client.close();
 	});
 

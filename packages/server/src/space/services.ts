@@ -1,24 +1,14 @@
 import type { ServerEvent } from "@loopbacktools/protocol";
-import { Context, Effect, FiberMap, Layer, PubSub } from "effect";
-
-/** The longest a single wait for a reply may be held inside the object. */
-export const MAX_WAIT_MS = 30_000;
+import { Context, Effect, FiberMap, Layer } from "effect";
 
 /** How long an ask still shows an agent following it after its last lap or poll. */
 export const PRESENCE_GRACE_MS = 10_000;
 
 /**
- * A signal for every reply the space records. A caller waiting on the space subscribes before it
- * first looks, so a reply landing between its looking and its waiting still wakes it.
- */
-export class Replies extends Context.Service<Replies, PubSub.PubSub<void>>()("loopback/Replies") {
-	static readonly layer = Layer.effect(Replies, PubSub.unbounded<void>());
-}
-
-/**
- * Which asks an agent is following right now: blocked on in laps, or polling as a background task.
- * An ask stays followed for `PRESENCE_GRACE_MS` after the last lap or poll ends; if none comes by
- * then, the agent has gone. That grace is a fiber per ask, so a lap that begins in time cancels it.
+ * Which asks an agent is polling as a background task. An ask stays followed for
+ * `PRESENCE_GRACE_MS` after the last poll ends; if none comes by then, the agent has gone. That
+ * grace is a fiber per ask, so a poll that begins in time cancels it. An agent blocked on an ask
+ * holds a wait socket instead, which the host counts.
  */
 export class Presence extends Context.Service<
 	Presence,
@@ -92,6 +82,10 @@ export class Host extends Context.Service<
 	{
 		/** Sends an event to every connected inbox. */
 		readonly broadcast: (event: ServerEvent) => Effect.Effect<void>;
+		/** Tells every agent waiting on the ask that a reply landed, for it to take. */
+		readonly wake: (askId: string) => Effect.Effect<void>;
+		/** How many agents hold a wait on the ask right now. */
+		readonly waiters: (askId: string) => number;
 		/** The DO id, which upload URLs name the space by. */
 		readonly spaceId: string;
 	}

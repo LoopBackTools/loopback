@@ -7,9 +7,9 @@ import type {
 	ServerEvent,
 } from "@loopbacktools/protocol";
 import { describe, expect, it } from "@effect/vitest";
-import { runInDurableObject } from "cloudflare:test";
+import { evictDurableObject, runInDurableObject } from "cloudflare:test";
 import { exports } from "cloudflare:workers";
-import { Cause, Effect, Exit, Fiber } from "effect";
+import { Cause, Effect, Exit } from "effect";
 import { TestClock } from "effect/testing";
 import { REATTACH_WINDOW_MS } from "../src/domain/ask.ts";
 import { AskNotFound } from "../src/domain/errors.ts";
@@ -42,6 +42,165 @@ const failureTag = <A, E extends { readonly _tag: string }>(exit: Exit.Exit<A, E
 		? exit.cause.reasons.flatMap((reason) => (reason._tag === "Fail" ? [reason.error._tag] : []))
 		: [];
 
+/** The frames a socket the test holds has received, and a wait for the next of them. */
+const framesOf = <F>(socket: WebSocket, read: (data: string) => F) => {
+	const frames: F[] = [];
+	const listeners = new Set<() => void>();
+	socket.addEventListener("message", (event) => {
+		frames.push(read(String(event.data)));
+		for (const listener of listeners) listener();
+	});
+	socket.accept();
+	/** Resolves once `count` frames have arrived. */
+	const until = (count: number) =>
+		new Promise<F[]>((resolve) => {
+			const check = () => {
+				if (frames.length >= count) {
+					listeners.delete(check);
+					resolve(frames.slice());
+				}
+			};
+			listeners.add(check);
+			check();
+		});
+	return { socket, frames, until };
+};
+
+/** An inbox's event socket on the space. */
+const connect = async (stub: DurableObjectStub) => {
+	const response = await stub.fetch("http://space/events", {
+		headers: { Upgrade: "websocket", "Sec-WebSocket-Protocol": "loopback.v1" },
+	});
+	expect(response.status).toBe(101);
+	expect(response.headers.get("Sec-WebSocket-Protocol")).toBe("loopback.v1");
+	if (response.webSocket === null) throw new Error("no socket");
+	return framesOf(response.webSocket, (data) => JSON.parse(data) as ServerEvent);
+};
+
+/** An agent's wait on one ask, as the Worker holds it: the space's answer to the upgrade. */
+const upgradeWait = (stub: DurableObjectStub, askId: string) =>
+	stub.fetch(`http://space/wait/${askId}`, { headers: { Upgrade: "websocket" } });
+
+/** An agent's wait on one ask, open. */
+const waitOn = async (stub: DurableObjectStub, askId: string) => {
+	const response = await upgradeWait(stub, askId);
+	expect(response.status).toBe(101);
+	if (response.webSocket === null) throw new Error("no socket");
+	return framesOf(response.webSocket, (data) => data);
+};
+
+/** Polls until `check` holds, for up to `ms`. */
+const eventually = (check: () => Effect.Effect<boolean, unknown>, ms = 1_000) =>
+	Effect.gen(function* () {
+		const until = Date.now() + ms;
+		while (!(yield* check())) {
+			if (Date.now() > until) return false;
+			yield* Effect.sleep("20 millis");
+		}
+		return true;
+	});
+
+describe("waiting", () => {
+	it.live("wakes a waiting socket when the reply lands", () =>
+		Effect.gen(function* () {
+			const { stub, space } = fresh();
+			const ask = yield* space.open({ actor: OWNER, kind: "review", input: copy });
+			const waiter = yield* Effect.promise(() => waitOn(stub, ask.id));
+			expect((yield* space.get(ask.id)).waiting).toBe(true);
+			yield* space.reply(ask.id, { outcome: "approved", note: "Ship it" }, OWNER);
+			expect(yield* Effect.promise(() => waiter.until(1))).toEqual(["reply"]);
+			expect(yield* space.takeReply(ask.id)).toEqual({
+				askId: ask.id,
+				reply: { outcome: "approved", note: "Ship it" },
+				seq: 1,
+			});
+			waiter.socket.close();
+		}),
+	);
+
+	it.live("wakes at once a waiter whose reply landed before it connected", () =>
+		Effect.gen(function* () {
+			const { stub, space } = fresh();
+			const ask = yield* space.open({ actor: OWNER, kind: "question", input: colour });
+			yield* space.reply(ask.id, { outcome: "answered", selected: ["Red"] }, OWNER);
+			const waiter = yield* Effect.promise(() => waitOn(stub, ask.id));
+			expect(yield* Effect.promise(() => waiter.until(1))).toEqual(["reply"]);
+			waiter.socket.close();
+		}),
+	);
+
+	it.live("shows the agent gone as soon as its wait socket closes", () =>
+		Effect.gen(function* () {
+			const { stub, space } = fresh();
+			const ask = yield* space.open({ actor: OWNER, kind: "question", input: colour });
+			const inbox = yield* Effect.promise(() => connect(stub));
+			const waiter = yield* Effect.promise(() => waitOn(stub, ask.id));
+			expect((yield* space.get(ask.id)).waiting).toBe(true);
+			waiter.socket.close(1000, "The agent stopped waiting.");
+			const gone = yield* eventually(() =>
+				Effect.map(space.get(ask.id), (current) => !current.waiting),
+			);
+			expect(gone).toBe(true);
+			expect(inbox.frames.at(-1)).toMatchObject({
+				type: "ask.updated",
+				ask: { id: ask.id, waiting: false },
+			});
+			inbox.socket.close();
+		}),
+	);
+
+	it.live("keeps an ask waiting while its space hibernates", () =>
+		Effect.gen(function* () {
+			const { stub, space } = fresh();
+			const ask = yield* space.open({ actor: OWNER, kind: "review", input: copy });
+			const waiter = yield* Effect.promise(() => waitOn(stub, ask.id));
+			yield* Effect.promise(() => evictDurableObject(stub));
+			expect((yield* space.get(ask.id)).waiting).toBe(true);
+			yield* space.reply(ask.id, { outcome: "approved" }, OWNER);
+			expect(yield* Effect.promise(() => waiter.until(1))).toEqual(["reply"]);
+			waiter.socket.close();
+		}),
+	);
+
+	it.live("wakes every waiter on one ask", () =>
+		Effect.gen(function* () {
+			const { stub, space } = fresh();
+			const ask = yield* space.open({ actor: OWNER, kind: "question", input: colour });
+			const first = yield* Effect.promise(() => waitOn(stub, ask.id));
+			const second = yield* Effect.promise(() => waitOn(stub, ask.id));
+			yield* space.reply(ask.id, { outcome: "answered", selected: ["Blue"] }, OWNER);
+			expect(yield* Effect.promise(() => first.until(1))).toEqual(["reply"]);
+			expect(yield* Effect.promise(() => second.until(1))).toEqual(["reply"]);
+			first.socket.close();
+			second.socket.close();
+		}),
+	);
+
+	it.live("sends inbox events to inboxes only", () =>
+		Effect.gen(function* () {
+			const { stub, space } = fresh();
+			const ask = yield* space.open({ actor: OWNER, kind: "question", input: colour });
+			const inbox = yield* Effect.promise(() => connect(stub));
+			const waiter = yield* Effect.promise(() => waitOn(stub, ask.id));
+			const other = yield* space.open({ actor: OWNER, kind: "review", input: copy });
+			const frames = yield* Effect.promise(() => inbox.until(3));
+			expect(frames.at(-1)).toMatchObject({ type: "ask.opened", ask: { id: other.id } });
+			yield* Effect.sleep("300 millis");
+			expect(waiter.frames).toEqual([]);
+			inbox.socket.close();
+			waiter.socket.close();
+		}),
+	);
+
+	it.effect("refuses a wait on an ask it doesn't hold", () =>
+		Effect.gen(function* () {
+			const { stub } = fresh();
+			const response = yield* Effect.promise(() => upgradeWait(stub, crypto.randomUUID()));
+			expect(response.status).toBe(404);
+		}),
+	);
+});
+
 describe("asks", () => {
 	it.effect("opens a question awaiting the person", () =>
 		Effect.gen(function* () {
@@ -73,16 +232,16 @@ describe("asks", () => {
 			const closed = yield* space.reply(ask.id, { outcome: "answered", selected: ["Blue"] }, OWNER);
 			expect(closed.status).toBe("closed");
 			expect(closed.closedAt).toBeDefined();
-			const handed = yield* space.awaitReply(ask.id, 0);
+			const handed = yield* space.takeReply(ask.id);
 			expect(handed).toEqual({
 				askId: ask.id,
 				reply: { outcome: "answered", selected: ["Blue"] },
 				seq: 1,
 			});
 			// A wait cut off before the agent took the reply hands it over again.
-			expect(yield* space.awaitReply(ask.id, 0)).toEqual(handed);
+			expect(yield* space.takeReply(ask.id)).toEqual(handed);
 			yield* space.markDelivered(ask.id, 1);
-			expect(yield* space.awaitReply(ask.id, 0)).toBeNull();
+			expect(yield* space.takeReply(ask.id)).toBeNull();
 		}),
 	);
 
@@ -104,30 +263,6 @@ describe("asks", () => {
 		30_000,
 	);
 
-	it.live("holds a wait until the reply lands", () =>
-		Effect.gen(function* () {
-			const { space } = fresh();
-			const ask = yield* space.open({ actor: OWNER, kind: "review", input: copy });
-			const waiting = yield* Effect.forkChild(space.awaitReply(ask.id, 10_000));
-			yield* Effect.sleep("200 millis");
-			expect((yield* space.get(ask.id)).waiting).toBe(true);
-			yield* space.reply(ask.id, { outcome: "approved", note: "Ship it" }, OWNER);
-			expect(yield* Fiber.join(waiting)).toEqual({
-				askId: ask.id,
-				reply: { outcome: "approved", note: "Ship it" },
-				seq: 1,
-			});
-		}),
-	);
-
-	it.effect("answers null when no reply comes in time", () =>
-		Effect.gen(function* () {
-			const { space } = fresh();
-			const ask = yield* space.open({ actor: OWNER, kind: "question", input: colour });
-			expect(yield* space.awaitReply(ask.id, 50)).toBeNull();
-		}),
-	);
-
 	it.effect("runs a follow-up round trip in one ask", () =>
 		Effect.gen(function* () {
 			const { space } = fresh();
@@ -141,7 +276,7 @@ describe("asks", () => {
 				OWNER,
 			);
 			expect(asked.status).toBe("awaiting_agent");
-			expect(yield* space.awaitReply(ask.id, 0)).toMatchObject({
+			expect(yield* space.takeReply(ask.id)).toMatchObject({
 				reply: { outcome: "follow_up", question: "Why this tone?" },
 			});
 			const answered = yield* space.answerFollowUp({
@@ -395,7 +530,7 @@ describe("retries", () => {
 			yield* space.reply(first.id, { outcome: "answered", selected: ["Red"] }, OWNER);
 			const retried = yield* space.open({ actor: OWNER, kind: "question", input: colour });
 			expect(retried.id).toBe(first.id);
-			const handed = yield* space.awaitReply(retried.id, 0);
+			const handed = yield* space.takeReply(retried.id);
 			expect(handed).toMatchObject({ reply: { outcome: "answered", selected: ["Red"] } });
 			// Until the agent takes the reply, asking again is still a retry.
 			expect((yield* space.open({ actor: OWNER, kind: "question", input: colour })).id).toBe(
@@ -491,36 +626,6 @@ describe("uploads", () => {
 });
 
 describe("event socket", () => {
-	const connect = async (stub: DurableObjectStub) => {
-		const response = await stub.fetch("http://space/events", {
-			headers: { Upgrade: "websocket", "Sec-WebSocket-Protocol": "loopback.v1" },
-		});
-		expect(response.status).toBe(101);
-		expect(response.headers.get("Sec-WebSocket-Protocol")).toBe("loopback.v1");
-		const socket = response.webSocket;
-		if (socket === null) throw new Error("no socket");
-		const frames: ServerEvent[] = [];
-		const listeners = new Set<() => void>();
-		socket.addEventListener("message", (event) => {
-			frames.push(JSON.parse(String(event.data)));
-			for (const listener of listeners) listener();
-		});
-		socket.accept();
-		/** Resolves once `count` frames have arrived. */
-		const until = (count: number) =>
-			new Promise<ServerEvent[]>((resolve) => {
-				const check = () => {
-					if (frames.length >= count) {
-						listeners.delete(check);
-						resolve(frames.slice());
-					}
-				};
-				listeners.add(check);
-				check();
-			});
-		return { socket, until };
-	};
-
 	it.live("sends a snapshot, then every change", () =>
 		Effect.gen(function* () {
 			const { stub, space } = fresh();
@@ -530,10 +635,9 @@ describe("event socket", () => {
 			expect(first).toMatchObject({ type: "snapshot", snapshot: { open: [{ id: existing.id }] } });
 
 			const review = yield* space.open({ actor: OWNER, kind: "review", input: copy });
-			const waiting = yield* Effect.forkChild(space.awaitReply(review.id, 10_000));
-			yield* Effect.sleep("200 millis");
+			const waiter = yield* Effect.promise(() => waitOn(stub, review.id));
 			yield* space.reply(review.id, { outcome: "changes_requested", feedback: "Shorter." }, OWNER);
-			yield* Fiber.join(waiting);
+			yield* Effect.promise(() => waiter.until(1));
 
 			const frames = yield* Effect.promise(() => until(4));
 			expect(frames.slice(1, 4).map((frame) => frame.type)).toEqual([
@@ -545,6 +649,7 @@ describe("event socket", () => {
 			expect(frames[2]).toMatchObject({ ask: { id: review.id, waiting: true } });
 			expect(frames[3]).toMatchObject({ ask: { id: review.id, status: "closed" } });
 			socket.close();
+			waiter.socket.close();
 		}),
 	);
 
@@ -680,7 +785,7 @@ describe("briefings", () => {
 			const closed = yield* space.reply(ask.id, closing, OWNER);
 			expect(closed.status).toBe("closed");
 			expect(closed.closedAt).toBeDefined();
-			expect(yield* space.awaitReply(ask.id, 0)).toMatchObject({ reply: closing });
+			expect(yield* space.takeReply(ask.id)).toMatchObject({ reply: closing });
 		}),
 	);
 
@@ -750,7 +855,7 @@ describe("briefings", () => {
 				const again = yield* space.answerBriefing(move);
 				expect(again.turn).toBe(first.turn);
 				expect(again.ask.thread).toHaveLength(first.ask.thread.length + 1);
-				expect(yield* space.awaitReply(ask.id, 0)).toMatchObject({
+				expect(yield* space.takeReply(ask.id)).toMatchObject({
 					reply: responded({ point: "1", text: "Which queries?" }),
 				});
 			}),
@@ -763,7 +868,7 @@ describe("briefings", () => {
 			const move = { askId: ask.id, answers: [{ point: "1", answer: "Queries." }] };
 			yield* space.answerBriefing(move);
 			yield* space.reply(ask.id, responded({ point: "1", text: "Which queries?" }), OWNER);
-			const delivered = yield* space.awaitReply(ask.id, 0);
+			const delivered = yield* space.takeReply(ask.id);
 			yield* space.markDelivered(ask.id, delivered?.seq ?? 0);
 			yield* space.reply(ask.id, { outcome: "dismissed" }, OWNER);
 			const exit = yield* Effect.exit(space.answerBriefing(move));
@@ -785,7 +890,7 @@ describe("briefings", () => {
 			yield* space.reply(ask.id, closing, OWNER);
 			const again = yield* space.answerBriefing(move);
 			expect(again.turn).toBe(first.turn);
-			expect(yield* space.awaitReply(ask.id, 0)).toMatchObject({ reply: closing });
+			expect(yield* space.takeReply(ask.id)).toMatchObject({ reply: closing });
 		}),
 	);
 
@@ -824,10 +929,10 @@ describe("briefings", () => {
 			const { space } = fresh();
 			const ask = yield* owing(space);
 			yield* space.reply(ask.id, { outcome: "dismissed" }, OWNER);
-			const first = yield* space.awaitReply(ask.id, 0);
+			const first = yield* space.takeReply(ask.id);
 			expect(first).toMatchObject({ reply: responded({ point: "1", text: "Why D1?" }) });
 			yield* space.markDelivered(ask.id, first?.seq ?? 0);
-			expect(yield* space.awaitReply(ask.id, 0)).toMatchObject({ reply: { outcome: "dismissed" } });
+			expect(yield* space.takeReply(ask.id)).toMatchObject({ reply: { outcome: "dismissed" } });
 		}),
 	);
 

@@ -24,6 +24,16 @@ export interface Caller {
 	readonly build?: string | undefined;
 }
 
+/**
+ * The one frame a space sends an agent's wait socket (`/wait/<askId>`): a reply landed on the ask,
+ * for the agent to take with `takeReply`. Anything else a wait socket hears is the auto-response to
+ * its pings.
+ */
+export const REPLY_FRAME = "reply";
+
+/** Where a Worker opens an agent's wait on an ask. */
+export const waitPath = (askId: string) => `/wait/${encodeURIComponent(askId)}`;
+
 /** A deployment's build, from its version metadata binding, if it has one. */
 export const buildOf = (env: unknown): string | undefined => {
 	const metadata = (env as { readonly CF_VERSION_METADATA?: { readonly timestamp?: unknown } })
@@ -112,7 +122,7 @@ const idempotent: ReadonlySet<OperationName> = new Set<OperationName>([
 	"open",
 	"answerFollowUp",
 	"answerBriefing",
-	"awaitReply",
+	"takeReply",
 	"markDelivered",
 	"followTask",
 	"cancelTask",

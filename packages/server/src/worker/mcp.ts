@@ -16,7 +16,7 @@ import {
 	ProtocolErrorCode,
 	type ServerContext,
 } from "@modelcontextprotocol/server";
-import { Effect } from "effect";
+import { Effect, Option } from "effect";
 import { z } from "zod";
 import {
 	briefingAnswerInputSchema,
@@ -281,21 +281,52 @@ const reportProgress = (ctx: ServerContext, step: number) =>
 		});
 	});
 
+/** How many times a wait reconnects in a row, its socket dropping each time, before it gives up. */
+const RECONNECTS = 8;
+
 /**
- * Waits, in laps, until the person replies to the ask, reporting progress between laps, and takes
- * the reply. A call whose client has gone is interrupted before it takes it, which leaves the reply
- * for the client's retry. The ask was just opened or answered, so one that has vanished is a broken
+ * Waits until the person replies to the ask, and takes the reply. The wait is a socket to the space,
+ * which can sleep meanwhile: it wakes the socket when a reply lands. Every lap the wait pings the
+ * socket and tells the client it is alive. A socket dropped under the wait, by a restart or by the
+ * space moving onto new code, is opened again, after a backoff that grows while it keeps dropping.
+ * A call whose client has gone is interrupted before it takes the reply, which leaves it for the
+ * client's retry. The ask was just opened or answered, so one that has vanished is a broken
  * invariant, not an error to report.
  */
-const replyTo = (ctx: ServerContext, space: SpaceClient, askId: string) =>
+const replyTo = (ctx: ServerContext, space: SpaceClient, access: Access, askId: string) =>
 	Effect.gen(function* () {
-		for (let step = 0; ; step += 1) {
-			yield* reportProgress(ctx, step);
-			const delivery = yield* space.awaitReply(askId, LAP_MS);
-			if (delivery !== null) {
-				yield* space.markDelivered(askId, delivery.seq);
-				return answered(delivery, yield* briefingFor(space, delivery));
+		const spaces = yield* Spaces;
+		let step = 0;
+		let drops = 0;
+		for (;;) {
+			const taken = yield* Effect.scoped(
+				Effect.gen(function* () {
+					const waiter = yield* spaces.wait(access, askId);
+					for (let lap = 0; ; lap += 1) {
+						yield* reportProgress(ctx, step);
+						step += 1;
+						const said = yield* Effect.timeoutOption(waiter.next, LAP_MS);
+						if (Option.isNone(said)) {
+							// A lap with the socket alive: the drops before it are behind us.
+							drops = 0;
+							yield* waiter.ping;
+							continue;
+						}
+						if (said.value === "closed") return null;
+						const delivery = yield* space.takeReply(askId);
+						if (delivery !== null) {
+							yield* space.markDelivered(askId, delivery.seq);
+							return answered(delivery, yield* briefingFor(space, delivery));
+						}
+					}
+				}),
+			).pipe(Effect.catchTag("SpaceUnavailable", () => Effect.succeed(null)));
+			if (taken !== null) return taken;
+			drops += 1;
+			if (drops > RECONNECTS) {
+				return yield* Effect.die(new Error(`The wait on ask ${askId} kept dropping.`));
 			}
+			yield* Effect.sleep(Math.min(100 * 2 ** (drops - 1), 5_000) * (0.5 + Math.random()));
 		}
 	}).pipe(Effect.catchTag("AskNotFound", Effect.die));
 
@@ -311,7 +342,7 @@ const server = ({ runtime, access, origin, requestId, inboxUrl }: McpCaller) => 
 	};
 	const serve = (
 		ctx: ServerContext,
-		program: (space: SpaceClient) => Effect.Effect<CallToolResult>,
+		program: (space: SpaceClient) => Effect.Effect<CallToolResult, never, Spaces>,
 	) =>
 		run(
 			runtime,
@@ -329,8 +360,10 @@ const server = ({ runtime, access, origin, requestId, inboxUrl }: McpCaller) => 
 		askId: string,
 		turn: number,
 		at: string,
-	): Effect.Effect<CallToolResult> =>
-		supportsTasks(ctx) ? Effect.succeed(started(askId, turn, at)) : replyTo(ctx, space, askId);
+	): Effect.Effect<CallToolResult, never, Spaces> =>
+		supportsTasks(ctx)
+			? Effect.succeed(started(askId, turn, at))
+			: replyTo(ctx, space, access, askId);
 
 	/** Runs a `tasks/*` request against the task's ask; an ask or turn the space does not know is no task. */
 	const task = async (

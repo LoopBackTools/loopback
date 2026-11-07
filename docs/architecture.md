@@ -107,18 +107,23 @@ agent can have any number of tasks open. `tasks/cancel` stops a task: the ask st
 person can still answer it.
 
 **Waiting.** A client without background tasks cannot be handed one, so its call holds its HTTP
-request open and waits in **laps**. Each lap is a short RPC to the space, held for at most 25
-seconds, ending early when a reply lands. Between laps the tool sends an MCP progress notification,
-which keeps clients' idle timers from giving up.
+request open, and the Worker waits on a **wait socket**: a WebSocket to the space at
+`/wait/<askId>`, which the space accepts with the hibernation API. The space holds no timer and no
+request for the wait, so it can sleep while the agent waits. When a reply lands, the space wakes and
+sends the socket one frame, `reply`; the Worker then takes the reply with an RPC. Every 25 seconds
+the Worker pings the socket, which the space's auto-response answers without waking it, and sends
+an MCP progress notification, which keeps clients' idle timers from giving up. A socket dropped
+under a wait, by a restart or by the space moving onto new code, is opened again.
 
-A lap shows the agent the reply without handing it over: the Worker marks it delivered only once
-its own call has it, so a lap whose caller has gone leaves the reply for the caller's retry.
+The Worker marks a reply delivered only once its own call has it, so a wait whose caller has gone
+leaves the reply for the caller's retry.
 
 Either way, everything is stored in SQLite. The Worker's calls into a space are retried on a fresh
 stub when Cloudflare marks a failure retryable, as a reset by a deploy is, and the operation is safe
 to run twice; a reply is not, so a refused one is the inbox's to send again. While polls or laps
-arrive, the ask shows **agent waiting** in the inbox. Ten seconds after they stop, or at once when a
-task is cancelled, it shows that the agent has gone. Replying is still possible, and the reply is
+arrive, or while a wait socket is open, the ask shows **agent waiting** in the inbox. Ten seconds
+after polls stop, at once when a task is cancelled, and at once when the last wait socket closes,
+it shows that the agent has gone. Replying is still possible, and the reply is
 kept.
 
 A retried call (the same question or review, from the same client and project) **rejoins** the ask

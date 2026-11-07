@@ -239,7 +239,9 @@ describe("a space reading what it is called with", () => {
 			Effect.gen(function* () {
 				const space = spaceClient(freshSpace(), caller);
 				const ask = yield* space.open(question("Wait for me?"));
-				expect(unread(yield* Effect.exit(space.awaitReply(ask.id, unchecked("soon"))))).toBe(true);
+				expect(unread(yield* Effect.exit(space.markDelivered(ask.id, unchecked("soon"))))).toBe(
+					true,
+				);
 				expect(unread(yield* Effect.exit(space.get(unchecked(7))))).toBe(true);
 			}),
 		COLD_START,

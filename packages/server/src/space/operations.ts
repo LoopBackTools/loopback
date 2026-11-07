@@ -19,7 +19,7 @@ import {
 	type ToolReply,
 	type UploadReceipt,
 } from "@loopbacktools/protocol";
-import { Clock, Duration, Effect, Option, PubSub } from "effect";
+import { Clock, Effect, Option } from "effect";
 import {
 	type AskRecord,
 	briefingPrompt,
@@ -45,7 +45,7 @@ import {
 	UploadNotFound,
 	UploadRejected,
 } from "../domain/errors.ts";
-import { Host, MAX_WAIT_MS, Presence, Replies } from "./services.ts";
+import { Host, Presence } from "./services.ts";
 import { AskStore, TicketStore, UploadStore } from "./store.ts";
 
 /** How many closed asks a snapshot carries. */
@@ -121,21 +121,29 @@ const noteWaiting = Effect.fnUntraced(function* (record: AskRecord, at: string) 
 	yield* store.touchWaited(record.id, at);
 });
 
+/** Whether an agent is waiting on the ask: blocked on it over a wait socket, or polling it as a task. */
+const isWaiting = Effect.fnUntraced(function* (askId: string) {
+	const host = yield* Host;
+	const presence = yield* Presence;
+	return host.waiters(askId) > 0 || presence.isWaiting(askId);
+});
+
 /** The ask in its wire shape, with its thread and whether an agent is waiting on it. */
 const view = Effect.fnUntraced(function* (record: AskRecord) {
 	const store = yield* AskStore;
-	const presence = yield* Presence;
-	return toAsk(record, yield* store.thread(record.id), presence.isWaiting(record.id));
+	return toAsk(record, yield* store.thread(record.id), yield* isWaiting(record.id));
 });
 
 /** The asks in their wire shape, leaving out any whose thread can't be read. */
 const views = Effect.fnUntraced(function* (records: readonly AskRecord[]) {
 	const store = yield* AskStore;
+	const host = yield* Host;
 	const presence = yield* Presence;
 	const threads = yield* store.threads(records.map((record) => record.id));
 	return records.flatMap((record) => {
 		const thread = threads.get(record.id);
-		return thread === undefined ? [] : [toAsk(record, thread, presence.isWaiting(record.id))];
+		const waiting = host.waiters(record.id) > 0 || presence.isWaiting(record.id);
+		return thread === undefined ? [] : [toAsk(record, thread, waiting)];
 	});
 });
 
@@ -151,16 +159,21 @@ const announceFollowing = (askId: string) =>
 		Effect.ignoreCause({ log: true }),
 	);
 
-/** A lap or poll begins on the ask; inboxes hear it when that starts the ask being followed. */
+/** A poll begins on the ask; inboxes hear it when that starts the ask being followed. */
 const follow = Effect.fnUntraced(function* (askId: string) {
+	const host = yield* Host;
 	const presence = yield* Presence;
-	if (yield* presence.begin(askId)) yield* announceFollowing(askId);
+	if ((yield* presence.begin(askId)) && host.waiters(askId) === 0) yield* announceFollowing(askId);
 });
 
-/** A lap or poll ends; inboxes hear it if no other begins within the grace. */
+/** A poll ends; inboxes hear it if no other begins within the grace and no agent is blocked on it. */
 const unfollow = Effect.fnUntraced(function* (askId: string) {
+	const host = yield* Host;
 	const presence = yield* Presence;
-	yield* presence.end(askId, announceFollowing(askId));
+	yield* presence.end(
+		askId,
+		Effect.suspend(() => (host.waiters(askId) === 0 ? announceFollowing(askId) : Effect.void)),
+	);
 });
 
 /** Every image the blocks show must be an upload this space holds. */
@@ -391,45 +404,46 @@ export const answerBriefing = Effect.fn("Space.answerBriefing")(function* (
 });
 
 /**
- * Waits up to `waitMs` for a reply the agent has not yet taken, and shows it. `null` means none
- * came: the caller waits again. The reply stays the agent's to take until `markDelivered` says it
- * reached them, so a wait whose caller has gone loses nothing. While a wait is held the ask shows
- * as waiting.
+ * The reply the agent has not yet taken, or `null` when there is none. It stays the agent's to take
+ * until `markDelivered` says it reached them, so a wait whose caller has gone loses nothing.
  */
-export const awaitReply = Effect.fn("Space.awaitReply")(function* (askId: string, waitMs: number) {
+export const takeReply = Effect.fn("Space.takeReply")(function* (askId: string) {
 	const store = yield* AskStore;
-	const replies = yield* Replies;
-	const record = yield* findAsk(askId);
-	const take = Effect.gen(function* () {
-		const entry = yield* store.undelivered(askId);
-		if (Option.isNone(entry) || entry.value.entry.author !== "human") return null;
-		const delivery: Delivery = { askId, reply: entry.value.entry.reply, seq: entry.value.seq };
-		return delivery;
-	});
-	const wait = Effect.gen(function* () {
-		// Subscribed before the first look, so a reply landing in between still wakes this wait.
-		const woken = yield* PubSub.subscribe(replies);
-		const ready = yield* take;
-		if (ready !== null || waitMs <= 0) return ready;
-		const later = Effect.gen(function* () {
-			for (;;) {
-				yield* PubSub.take(woken);
-				const delivery = yield* take;
-				if (delivery !== null) return delivery;
-			}
-		});
-		const held = Duration.millis(Math.min(waitMs, MAX_WAIT_MS));
-		return Option.getOrNull(yield* Effect.timeoutOption(later, held));
-	});
-	return yield* Effect.acquireUseRelease(
-		Effect.gen(function* () {
-			yield* follow(askId);
-			yield* noteWaiting(record, yield* now);
-		}),
-		() => Effect.scoped(wait),
-		() => unfollow(askId),
-	);
+	yield* findAsk(askId);
+	const entry = yield* store.undelivered(askId);
+	if (Option.isNone(entry) || entry.value.entry.author !== "human") return null;
+	const delivery: Delivery = { askId, reply: entry.value.entry.reply, seq: entry.value.seq };
+	return delivery;
 });
+
+/**
+ * An agent has started waiting on the ask: its wait socket is open, and counted. It is written down
+ * for the reattach window, and inboxes hear it when that starts the ask being followed. True when a
+ * reply is already there for it to take.
+ */
+export const startWaiting = Effect.fn("Space.startWaiting")(function* (askId: string) {
+	const host = yield* Host;
+	const presence = yield* Presence;
+	const record = yield* findAsk(askId);
+	yield* noteWaiting(record, yield* now);
+	if (host.waiters(askId) === 1 && !presence.isWaiting(askId)) yield* announceFollowing(askId);
+	return (yield* takeReply(askId)) !== null;
+});
+
+/**
+ * An agent's wait socket has closed. When none is left and no task follows the ask, inboxes hear at
+ * once that no agent is waiting. An ask erased meanwhile has no one left to tell.
+ */
+export const stopWaiting = Effect.fn("Space.stopWaiting")(
+	function* (askId: string) {
+		const host = yield* Host;
+		const presence = yield* Presence;
+		const record = yield* findAsk(askId);
+		yield* noteWaiting(record, yield* now);
+		if (host.waiters(askId) === 0 && !presence.isWaiting(askId)) yield* announceFollowing(askId);
+	},
+	Effect.catchTag("AskNotFound", () => Effect.void),
+);
 
 /** Records that the agent was handed the reply at `seq`: a retry no longer collects it. */
 export const markDelivered = Effect.fn("Space.markDelivered")(function* (
@@ -560,7 +574,7 @@ export const cancelTask = Effect.fn("Space.cancelTask")(function* (
 /** Records a person's reply, wakes the agent waiting for it, and tells every inbox. */
 export const reply = Effect.fn("Space.reply")(function* (askId: string, answer: Reply, by: Actor) {
 	const store = yield* AskStore;
-	const replies = yield* Replies;
+	const host = yield* Host;
 	const at = yield* now;
 	const { record, status } = yield* store.transaction(
 		Effect.gen(function* () {
@@ -573,7 +587,7 @@ export const reply = Effect.fn("Space.reply")(function* (askId: string, answer: 
 			return { record: found, status: next };
 		}),
 	);
-	yield* PubSub.publish(replies, undefined);
+	yield* host.wake(askId);
 	const ask = yield* view({
 		...record,
 		status,
@@ -727,7 +741,7 @@ export const operations = {
 	open,
 	answerFollowUp,
 	answerBriefing,
-	awaitReply,
+	takeReply,
 	markDelivered,
 	followTask,
 	cancelTask,

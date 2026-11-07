@@ -5,7 +5,7 @@ import { DurableObject } from "cloudflare:workers";
 import { Effect, Exit, Layer, Logger, ManagedRuntime } from "effect";
 import { readArguments } from "./arguments.ts";
 import { migrations } from "./migrations.ts";
-import { operations, snapshot } from "./operations.ts";
+import { operations, snapshot, startWaiting, stopWaiting } from "./operations.ts";
 import {
 	buildOf,
 	type Caller,
@@ -14,9 +14,10 @@ import {
 	isLater,
 	type OperationName,
 	Outdated,
+	REPLY_FRAME,
 	type SpaceFailure,
 } from "./rpc.ts";
-import { Host, Presence, Replies } from "./services.ts";
+import { Host, Presence } from "./services.ts";
 import { AskStore, TicketStore, UploadStore } from "./store.ts";
 
 /** The subprotocol an inbox speaks on the event socket. */
@@ -25,16 +26,30 @@ export const EVENTS_PROTOCOL = "loopback.v1";
 /** How long a space that has refused newer code waits before restarting: long enough to answer. */
 const RESTART_DELAY_MS = 100;
 
-/** The code that accepted an inbox's socket, kept with it through hibernation. */
-interface AcceptedBy {
-	readonly revision: number;
-	readonly build: string | null;
-}
+/**
+ * What a socket is, kept with it through hibernation: an inbox's event socket, or an agent's wait on
+ * one ask, and the code that accepted it. A socket accepted before sockets were told apart has no
+ * `kind`, and is an inbox's.
+ */
+type Accepted =
+	| { readonly kind?: "inbox"; readonly revision: number; readonly build: string | null }
+	| {
+			readonly kind: "wait";
+			readonly askId: string;
+			readonly revision: number;
+			readonly build: string | null;
+	  };
+
+/** The tag a wait socket is accepted under, so a reply wakes only the agents waiting on its ask. */
+const waitTag = (askId: string) => `wait:${askId}`;
+
+/** Where a Worker opens a wait on an ask. */
+const WAIT_PATH = /^\/wait\/([^/]+)$/;
 
 /** The close code an inbox reconnects after when the space is now on other code: Service Restart. */
 const RECONNECT_ONTO_NEW_CODE = 1012;
 
-type SpaceServices = AskStore | UploadStore | TicketStore | Host | Replies | Presence;
+type SpaceServices = AskStore | UploadStore | TicketStore | Host | Presence;
 
 /**
  * One space: its asks, their threads, upload tickets, and the inboxes watching it. Everything it
@@ -62,13 +77,15 @@ export class Space extends DurableObject {
 			Host,
 			Host.of({
 				broadcast: (event) => this.#broadcast(event),
+				wake: (askId) => this.#wake(askId),
+				waiters: (askId) => this.#waiters(askId).length,
 				spaceId: this.ctx.id.toString(),
 			}),
 		);
 		return ManagedRuntime.make(
 			Layer.mergeAll(AskStore.layer, UploadStore.layer, TicketStore.layer, migrations).pipe(
 				Layer.provide(sql),
-				Layer.merge(Layer.mergeAll(host, Replies.layer, Presence.layer)),
+				Layer.merge(Layer.mergeAll(host, Presence.layer)),
 				Layer.merge(Logger.layer([Logger.consoleJson])),
 				Layer.orDie,
 			),
@@ -144,12 +161,15 @@ export class Space extends DurableObject {
 		);
 	}
 
-	/** Accepts an inbox's event socket and sends it the space as it stands. */
+	/**
+	 * Accepts a WebSocket: an inbox's event socket, sent the space as it stands, or an agent's wait on
+	 * one ask (`/wait/<askId>`), which is only ever sent the reply frame.
+	 */
 	override async fetch(request: Request): Promise<Response> {
 		if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
 			return new Response("Expected a WebSocket upgrade.", { status: 426 });
 		}
-		// The inbox reconnects, by then to the space on the new code.
+		// The inbox or the Worker reconnects, by then to the space on the new code.
 		const revision = request.headers.get(REVISION_HEADER);
 		const handedBy = {
 			revision: revision === null ? undefined : Number(revision),
@@ -161,12 +181,19 @@ export class Space extends DurableObject {
 				headers: { "Retry-After": "1" },
 			});
 		}
+		const waitingOn = WAIT_PATH.exec(new URL(request.url).pathname)?.[1];
+		return waitingOn === undefined
+			? this.#acceptInbox(request)
+			: this.#acceptWait(decodeURIComponent(waitingOn));
+	}
+
+	async #acceptInbox(request: Request): Promise<Response> {
 		// Read the space first: a socket is only accepted once there is something to send it.
 		const current = await this.#runtime.runPromise(snapshot);
 		const { 0: client, 1: server } = new WebSocketPair();
 		this.ctx.acceptWebSocket(server);
-		const acceptedBy: AcceptedBy = { revision: REVISION, build: this.#ownBuild ?? null };
-		server.serializeAttachment(acceptedBy);
+		const accepted: Accepted = { kind: "inbox", revision: REVISION, build: this.#ownBuild ?? null };
+		server.serializeAttachment(accepted);
 		const first: ServerEvent = { type: "snapshot", snapshot: current };
 		server.send(JSON.stringify(first));
 		const offered = (request.headers.get("Sec-WebSocket-Protocol") ?? "")
@@ -182,10 +209,68 @@ export class Space extends DurableObject {
 	}
 
 	/**
-	 * Inboxes only send keep-alive pings, which the auto-response answers without waking us. Closing
-	 * needs no handler: the runtime completes the close handshake itself.
+	 * Accepts an agent's wait on an ask, counted from then on as an agent waiting on it. A wait whose
+	 * reply is already there is woken at once. While the space holds nothing but wait sockets it can
+	 * hibernate: a reply wakes it, and it wakes the waiters.
+	 */
+	async #acceptWait(askId: string): Promise<Response> {
+		const { 0: client, 1: server } = new WebSocketPair();
+		this.ctx.acceptWebSocket(server, [waitTag(askId)]);
+		const accepted: Accepted = {
+			kind: "wait",
+			askId,
+			revision: REVISION,
+			build: this.#ownBuild ?? null,
+		};
+		server.serializeAttachment(accepted);
+		const started = await this.#runtime.runPromise(
+			startWaiting(askId).pipe(
+				Effect.catchTag("AskNotFound", () => Effect.succeed("missing" as const)),
+			),
+		);
+		if (started === "missing") {
+			server.close(1000, "No such ask.");
+			return new Response("No such ask.", { status: 404 });
+		}
+		if (started) server.send(REPLY_FRAME);
+		return new Response(null, { status: 101, webSocket: client });
+	}
+
+	/**
+	 * Inboxes and waiting Workers only send keep-alive pings, which the auto-response answers without
+	 * waking us.
 	 */
 	override async webSocketMessage(): Promise<void> {}
+
+	/**
+	 * A socket closed. The runtime completes the close handshake itself; a wait's closing is what
+	 * tells inboxes its agent has stopped waiting.
+	 */
+	override async webSocketClose(socket: WebSocket): Promise<void> {
+		const accepted = socket.deserializeAttachment() as Accepted | null;
+		if (accepted?.kind !== "wait") return;
+		await this.#runtime.runPromise(stopWaiting(accepted.askId));
+	}
+
+	/** The wait sockets open on an ask. One closing is no longer counted. */
+	#waiters(askId: string): WebSocket[] {
+		return this.ctx
+			.getWebSockets(waitTag(askId))
+			.filter((socket) => socket.readyState === WebSocket.READY_STATE_OPEN);
+	}
+
+	/** Sends every agent waiting on the ask the reply frame. */
+	#wake(askId: string): Effect.Effect<void> {
+		return Effect.sync(() => {
+			for (const socket of this.#waiters(askId)) {
+				try {
+					socket.send(REPLY_FRAME);
+				} catch {
+					// A socket that is closing misses the frame; its agent's next wait finds the reply.
+				}
+			}
+		});
+	}
 
 	/**
 	 * Whether a socket was accepted by other code than this. A hibernated socket stays open while its
@@ -193,18 +278,21 @@ export class Space extends DurableObject {
 	 * learn that Loopback was updated.
 	 */
 	#acceptedByOther(socket: WebSocket): boolean {
-		const by = socket.deserializeAttachment() as AcceptedBy | null;
+		const by = socket.deserializeAttachment() as Accepted | null;
 		return by?.revision !== REVISION || by.build !== (this.#ownBuild ?? null);
 	}
 
 	/**
 	 * Sends every inbox the event. One whose socket other code accepted is closed instead: it
-	 * reconnects onto this code, and hears from the server that it is newer.
+	 * reconnects onto this code, and hears from the server that it is newer. Wait sockets hear only
+	 * the reply frame.
 	 */
 	#broadcast(event: ServerEvent): Effect.Effect<void> {
 		return Effect.sync(() => {
 			const frame = JSON.stringify(event);
 			for (const socket of this.ctx.getWebSockets()) {
+				const accepted = socket.deserializeAttachment() as Accepted | null;
+				if (accepted?.kind === "wait") continue;
 				try {
 					if (this.#acceptedByOther(socket)) {
 						socket.close(RECONNECT_ONTO_NEW_CODE, "Loopback was updated.");
