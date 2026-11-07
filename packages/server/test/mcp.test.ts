@@ -678,3 +678,44 @@ describe.each<Era>(["legacy", "auto"])("the MCP endpoint (%s negotiation)", (mod
 		}
 	});
 });
+
+describe("listen streams", () => {
+	it("acknowledges a listen and closes it, since Loopback publishes no list changes", async () => {
+		const response = await exports.default.fetch(`${ORIGIN}/mcp`, {
+			method: "POST",
+			headers: {
+				Authorization: `Bearer ${env.LOOPBACK_TOKEN}`,
+				"Content-Type": "application/json",
+				Accept: "application/json, text/event-stream",
+				"MCP-Protocol-Version": "2026-07-28",
+				"Mcp-Method": "subscriptions/listen",
+			},
+			body: JSON.stringify({
+				jsonrpc: "2.0",
+				id: 1,
+				method: "subscriptions/listen",
+				params: {
+					notifications: { toolsListChanged: true },
+					_meta: {
+						"io.modelcontextprotocol/protocolVersion": "2026-07-28",
+						"io.modelcontextprotocol/clientInfo": { name: "listen-test", version: "1.0.0" },
+						"io.modelcontextprotocol/clientCapabilities": {},
+					},
+				},
+			}),
+		});
+		// A stream left open never ends: read it for two seconds at most.
+		const body = await Promise.race([response.text(), pause(2_000).then(() => "still open")]);
+		expect(body).not.toBe("still open");
+		const frames = body
+			.split("\n")
+			.filter((line) => line.startsWith("data:"))
+			.map((line) => JSON.parse(line.slice(5).trim()) as Record<string, unknown>);
+		expect(frames).toHaveLength(2);
+		expect(frames[0]).toMatchObject({
+			method: "notifications/subscriptions/acknowledged",
+			params: { notifications: {} },
+		});
+		expect(frames[1]).toMatchObject({ id: 1, result: {} });
+	});
+});

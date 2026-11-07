@@ -324,6 +324,10 @@ const replyTo = (ctx: ServerContext, space: SpaceClient, access: Access, askId: 
 
 const server = ({ runtime, access, origin, requestId, inboxUrl }: McpCaller) => {
 	const mcp = new McpServer({ name: "loopback", version: VERSION }, { instructions: INSTRUCTIONS });
+	// Loopback's tools never change, and it publishes nothing else, so a client's
+	// `subscriptions/listen` is acknowledged and closed at once rather than held open for hours.
+	// Declared before the first tool: the SDK fills in `listChanged: true` only when it is unset.
+	mcp.server.registerCapabilities({ tools: { listChanged: false } });
 	/**
 	 * A call that died is logged, and the agent hears only the incident to quote. One its client
 	 * abandoned has no one to tell.
