@@ -95,8 +95,8 @@ when it is deployed:
 LOOPBACK_PLAN=paid pnpm run deploy
 ```
 
-Anything but `paid` deploys for Free. The two differ only in what a deployment spends on agents
-waiting for you:
+Set it on every deploy: a deploy without it is for Free, and says so. The two differ only in what a
+deployment spends on agents waiting for you:
 
 |                                                             | Free (the default)                                                                                             | Paid                            |
 | ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------- |

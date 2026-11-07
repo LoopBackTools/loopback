@@ -1,5 +1,6 @@
 import { bindings, defineConfig, exports } from "cf/config";
 import * as entrypoint from "./src/worker.ts" with { type: "cf-worker" };
+import { planFrom, planNotice } from "./plan.ts";
 
 /**
  * `--mode cpu-check` deploys a separate copy, `loopback-cpu-check`, held to Workers Free's 10 ms of
@@ -9,12 +10,17 @@ import * as entrypoint from "./src/worker.ts" with { type: "cf-worker" };
 const CPU_CHECK = "cpu-check";
 
 /**
- * The Workers plan the deployment runs on, from `LOOPBACK_PLAN` when it is deployed: `paid` lets a
- * blocking call wait until the reply. Anything else is `free`, which fits Workers Free's 10 ms of
- * CPU per request (see "Free or Paid" in the README).
+ * The Workers plan the deployment runs on, from `LOOPBACK_PLAN` when it is deployed (./plan.ts):
+ * `paid` lets a blocking call wait until the reply; anything else fits Workers Free's 10 ms of CPU
+ * per request (see "Free or Paid" in the README). The CPU check is always for Free. A deploy that
+ * falls back to Free says so.
  */
-const plan = (mode: string | undefined) =>
-	mode !== CPU_CHECK && process.env["LOOPBACK_PLAN"] === "paid" ? "paid" : "free";
+const plan = (mode: string | undefined) => {
+	if (mode === CPU_CHECK) return "free";
+	const notice = mode === "development" ? undefined : planNotice(process.env["LOOPBACK_PLAN"]);
+	if (notice !== undefined) console.warn(notice);
+	return planFrom(process.env["LOOPBACK_PLAN"]);
+};
 
 export default defineConfig(({ mode }) => ({
 	worker: {
