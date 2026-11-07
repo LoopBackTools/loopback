@@ -1,11 +1,16 @@
 import type { Ask, ToolReply, UploadTicket } from "@loopbacktools/protocol";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { describe, expect, it, vi } from "@effect/vitest";
-import { abortAllDurableObjects, evictDurableObject, runInDurableObject } from "cloudflare:test";
+import {
+	abortAllDurableObjects,
+	createExecutionContext,
+	evictDurableObject,
+	runInDurableObject,
+} from "cloudflare:test";
 import { env, exports } from "cloudflare:workers";
 import { Effect } from "effect";
 import packageJson from "../package.json" with { type: "json" };
-import { DEFAULT_SPACE } from "../src/index.ts";
+import { ConfiguredGate, createLoopback, DEFAULT_SPACE } from "../src/index.ts";
 import { questionInputSchema } from "../src/generated/schemas.gen.ts";
 import { spaceClient } from "../src/space/rpc.ts";
 import { eraseSpace } from "../src/worker/spaces.ts";
@@ -735,5 +740,38 @@ describe("tool schemas", () => {
 		} finally {
 			converts.mockRestore();
 		}
+	});
+});
+
+describe("a deployment's wait budget", () => {
+	const app = createLoopback({ gate: ConfiguredGate, budgets: { waitMs: 500 } });
+	const settings = { ...env };
+	const connectTo = async () => {
+		const client = new Client({ name: "budget-test", version: "1.0.0" });
+		await client.connect(
+			new StreamableHTTPClientTransport(new URL(`${ORIGIN}/mcp`), {
+				fetch: async (url, init) =>
+					app.fetch(new Request(url, init), settings, createExecutionContext()),
+				requestInit: { headers: { Authorization: `Bearer ${env.LOOPBACK_TOKEN}` } },
+			}),
+		);
+		return client;
+	};
+
+	it("ends a wait at its budget with a result that says to call again, and the call rejoins", async () => {
+		const client = await connectTo();
+		const input = { question: "Within budget?", project: "budget-test" };
+		const first = await client.callTool({ name: "ask_question", arguments: input });
+		expect(first.isError ?? false).toBe(false);
+		const askId = (first.structuredContent as { askId: string }).askId;
+		expect(first.structuredContent).toEqual({ askId, reply: null });
+		expect(textOf(first)).toContain("Call ask_question again with the same arguments");
+		await reply(askId, { outcome: "answered", selected: [], text: "Yes" });
+		const again = await client.callTool({ name: "ask_question", arguments: input });
+		expect(again.structuredContent).toEqual({
+			askId,
+			reply: { outcome: "answered", selected: [], text: "Yes" },
+		});
+		await client.close();
 	});
 });

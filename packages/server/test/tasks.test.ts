@@ -1,9 +1,9 @@
 import type { Ask } from "@loopbacktools/protocol";
 import { describe, expect, it } from "@effect/vitest";
-import { runInDurableObject } from "cloudflare:test";
+import { createExecutionContext, runInDurableObject } from "cloudflare:test";
 import { env, exports } from "cloudflare:workers";
 import { Effect } from "effect";
-import { DEFAULT_SPACE } from "../src/index.ts";
+import { ConfiguredGate, createLoopback, DEFAULT_SPACE } from "../src/index.ts";
 import { spaceClient } from "../src/space/rpc.ts";
 import { caller } from "./caller.ts";
 
@@ -28,10 +28,19 @@ let nextId = 1;
 const rpc = async (
 	method: string,
 	params: Record<string, unknown>,
-	options: { readonly name?: string; readonly tasks?: boolean } = {},
+	options: {
+		readonly name?: string;
+		readonly tasks?: boolean;
+		/** A deployment of the test's own, rather than the test Worker. */
+		readonly app?: ReturnType<typeof createLoopback>;
+	} = {},
 ): Promise<Message> => {
 	const id = nextId++;
-	const response = await exports.default.fetch(`${ORIGIN}/mcp`, {
+	const send = (init: RequestInit) =>
+		options.app === undefined
+			? exports.default.fetch(`${ORIGIN}/mcp`, init)
+			: options.app.fetch(new Request(`${ORIGIN}/mcp`, init), { ...env }, createExecutionContext());
+	const response = await send({
 		method: "POST",
 		headers: {
 			Authorization: `Bearer ${env.LOOPBACK_TOKEN}`,
@@ -130,6 +139,19 @@ describe("background tasks", () => {
 		});
 		expect(JSON.stringify(done.result?.result?.content)).toContain('They chose: \\"Background\\".');
 		expect((await poll(taskId)).result).toMatchObject({ status: "completed" });
+	});
+
+	it("ask to be polled as often as the deployment's budget says", async () => {
+		const app = createLoopback({
+			gate: ConfiguredGate,
+			budgets: { pollMs: [3_000, 12_000, 40_000] },
+		});
+		const started = await rpc(
+			"tools/call",
+			{ name: "ask_question", arguments: { question: "Polled by budget?", project: "tasks-test" } },
+			{ name: "ask_question", tasks: true, app },
+		);
+		expect(started.result).toMatchObject({ resultType: "task", pollIntervalMs: 3_000 });
 	});
 
 	it("ask to be polled less often the longer they wait", async () => {

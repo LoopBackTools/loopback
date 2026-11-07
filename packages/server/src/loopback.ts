@@ -1,4 +1,5 @@
 import type { Layer } from "effect";
+import { type Budgets, budgetsFor, type Plan } from "./budgets.ts";
 import type { LoopbackBindings, WorkerBindings, WorkerEnv } from "./worker/env.ts";
 import type { Gate } from "./worker/gate.ts";
 import { Limits } from "./worker/limits.ts";
@@ -27,6 +28,15 @@ export interface LoopbackOptions {
 	 * space, says where.
 	 */
 	readonly inboxUrl?: (link: InboxLink) => string;
+	/**
+	 * Which Workers plan the deployment runs on, which sets what it spends on waiting agents
+	 * (`Budgets`). Free holds each request to 10 ms of CPU, so a blocking call waits a while, then
+	 * asks the agent to call again, and tasks are polled less often. `"paid"` unless said otherwise:
+	 * a wait lasts until the reply.
+	 */
+	readonly plan?: Plan;
+	/** Any of the plan's budgets the deployment sets itself. */
+	readonly budgets?: Partial<Budgets>;
 }
 
 /**
@@ -37,6 +47,7 @@ export const createLoopback = (options: LoopbackOptions) => {
 	const app = makeApp(
 		runtimes(options.gate, options.spaces ?? Spaces.layer, options.limits ?? Limits.none),
 		options.inboxUrl ?? defaultInboxUrl,
+		budgetsFor(options.plan ?? "paid", options.budgets),
 	);
 	return {
 		// Any environment that declares Loopback's bindings: the host's own type, such as the one

@@ -83,6 +83,36 @@ its logs.
 Later deploys keep the token, so `pnpm run deploy` is enough. To change it, put a new one in a
 secrets file and deploy with `--secrets-file` again.
 
+## Free or Paid
+
+Loopback can run on Cloudflare's Workers Free plan, which holds each request to 10 ms of CPU and
+tolerates the odd request that goes over. A deployment says which plan it is on with
+`LOOPBACK_PLAN` when it is deployed:
+
+```sh
+LOOPBACK_PLAN=paid pnpm run deploy
+```
+
+Anything but `paid` deploys for Free. The two differ only in what a deployment spends on agents
+waiting for you:
+
+|                                                             | Free (the default)                                                                                             | Paid                            |
+| ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| A blocking question, from a client without background tasks | waits 10 minutes, then tells the agent to call again with the same arguments, which picks up the same question | waits until you answer          |
+| How often a background task is polled                       | every 5 s, then 15 s, then 30 s                                                                                | every 2 s, then 10 s, then 30 s |
+
+To check that a change fits Free, deploy a copy held to Free's 10 ms of CPU per request, drive it
+with an agent's traffic, and read back what each request cost:
+
+```sh
+pnpm --filter loopback run deploy --mode cpu-check --secrets-file ~/loopback.secrets
+LOOPBACK_URL=https://loopback-cpu-check.<your-subdomain>.workers.dev LOOPBACK_TOKEN=... \
+  node apps/loopback/scripts/cpu-check.ts
+pnpm --filter loopback exec node scripts/cpu-report.ts loopback-cpu-check <when the check began>
+```
+
+Delete the copy afterwards with `pnpm --filter loopback exec cf workers delete loopback-cpu-check`.
+
 ## Connect an agent
 
 ### Claude Code

@@ -116,7 +116,10 @@ an MCP progress notification, which keeps clients' idle timers from giving up. A
 under a wait, by a restart or by the space moving onto new code, is opened again.
 
 The Worker marks a reply delivered only once its own call has it, so a wait whose caller has gone
-leaves the reply for the caller's retry.
+leaves the reply for the caller's retry. Each lap costs the Worker about a millisecond of CPU, so a
+deployment on Workers Free (`plan: "free"`) ends a wait after ten minutes with "no reply yet: call
+again with the same arguments", and the call again rejoins the ask; on Paid a wait lasts until the
+reply.
 
 Either way, everything is stored in SQLite. The Worker's calls into a space are retried on a fresh
 stub when Cloudflare marks a failure retryable, as a reset by a deploy is, and the operation is safe

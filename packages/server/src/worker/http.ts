@@ -23,6 +23,7 @@ import { UPLOAD_MAX_BYTES } from "../space/operations.ts";
 import { buildOf } from "../space/rpc.ts";
 import { VERSION } from "../version.ts";
 import { llmsTxt } from "./llms.ts";
+import type { Budgets } from "../budgets.ts";
 import { type InboxLink, makeMcp } from "./mcp.ts";
 import { Spaces } from "./spaces.ts";
 
@@ -337,6 +338,7 @@ const deps = (runtimeOf: (env: WorkerBindings) => WorkerRuntime): RouteDeps<AppE
 export const makeApp = (
 	runtimeOf: (env: WorkerBindings) => WorkerRuntime,
 	inboxUrl: (link: InboxLink) => string,
+	budgets: Budgets,
 ) => {
 	const app = new Hono<AppEnv>({ router: new RegExpRouter() });
 
@@ -443,7 +445,7 @@ export const makeApp = (
 		);
 	});
 
-	const mcp = makeMcp(inboxUrl);
+	const mcp = makeMcp(inboxUrl, budgets);
 	app.all("/mcp", async (c) => {
 		const runtime = runtimeOf(c.env);
 		const access = await authenticate(runtime, c.req.raw, propsOf(c), c.get("requestId"));

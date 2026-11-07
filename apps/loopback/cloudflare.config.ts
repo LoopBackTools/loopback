@@ -8,6 +8,14 @@ import * as entrypoint from "./src/worker.ts" with { type: "cf-worker" };
  */
 const CPU_CHECK = "cpu-check";
 
+/**
+ * The Workers plan the deployment runs on, from `LOOPBACK_PLAN` when it is deployed: `paid` lets a
+ * blocking call wait until the reply. Anything else is `free`, which fits Workers Free's 10 ms of
+ * CPU per request (see "Free or Paid" in the README).
+ */
+const plan = (mode: string | undefined) =>
+	mode !== CPU_CHECK && process.env["LOOPBACK_PLAN"] === "paid" ? "paid" : "free";
+
 export default defineConfig(({ mode }) => ({
 	worker: {
 		name: mode === CPU_CHECK ? "loopback-cpu-check" : "loopback",
@@ -30,6 +38,7 @@ export default defineConfig(({ mode }) => ({
 		},
 		env: {
 			LOOPBACK_TOKEN: bindings.secret(),
+			LOOPBACK_PLAN: bindings.text(plan(mode)),
 			// No bucket name: the first deploy provisions one.
 			FILES: bindings.r2(),
 			// Which deploy the code is from: a space still on older code restarts onto newer.

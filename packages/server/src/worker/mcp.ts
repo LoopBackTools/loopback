@@ -20,7 +20,8 @@ import { Effect, Option } from "effect";
 import { z } from "zod";
 import * as generated from "../generated/schemas.gen.ts";
 import type { AskNotFound } from "../domain/errors.ts";
-import { POLL_INTERVALS, pollEvery } from "../domain/polling.ts";
+import type { Budgets } from "../budgets.ts";
+import { type PollIntervals, pollEvery } from "../domain/polling.ts";
 import { withCachedJsonSchema } from "./schema-cache.ts";
 import type { Delivery, TaskState } from "../space/operations.ts";
 import type { SpaceClient } from "../space/rpc.ts";
@@ -28,9 +29,6 @@ import type { Access } from "./gate.ts";
 import { incident, run, Unhandled, type WorkerRuntime } from "./run.ts";
 import { VERSION } from "../version.ts";
 import { Spaces } from "./spaces.ts";
-
-/** How long each wait for a reply is held before the tool reports progress and waits again. */
-const LAP_MS = 25_000;
 
 /** The tools' schemas, each converted to JSON Schema once per isolate (./schema-cache.ts). */
 const questionInputSchema = withCachedJsonSchema(generated.questionInputSchema);
@@ -79,6 +77,7 @@ interface McpCaller {
 	readonly origin: string;
 	readonly requestId: string;
 	readonly inboxUrl: (link: InboxLink) => string;
+	readonly budgets: Budgets;
 }
 
 const clientInfoSchema = z.object({ name: z.string(), version: z.string().optional() });
@@ -235,7 +234,12 @@ const latestTurn = (ask: Ask): readonly [turn: number, at: string] => {
 };
 
 /** A task in the shape `tasks/get` and a task-creating `tools/call` share. */
-const taskView = (taskId: string, state: TaskState, briefing?: BriefingAsk) => ({
+const taskView = (
+	taskId: string,
+	state: TaskState,
+	pollMs: PollIntervals,
+	briefing?: BriefingAsk,
+) => ({
 	taskId,
 	status: state.status,
 	...(state.status === "working"
@@ -244,7 +248,7 @@ const taskView = (taskId: string, state: TaskState, briefing?: BriefingAsk) => (
 	createdAt: state.createdAt,
 	lastUpdatedAt: state.lastUpdatedAt,
 	ttlMs: null,
-	pollIntervalMs: pollEvery(state.createdAt, Date.now()),
+	pollIntervalMs: pollEvery(state.createdAt, Date.now(), pollMs),
 	...(state.reply === null ? {} : { result: answered(state.reply, briefing) }),
 });
 
@@ -253,16 +257,29 @@ const taskView = (taskId: string, state: TaskState, briefing?: BriefingAsk) => (
  * `CallToolResult`, but passes a task through to the client unchanged: this is the one place the
  * two shapes meet.
  */
-const started = (askId: string, turn: number, at: string): CallToolResult =>
+const started = (askId: string, turn: number, at: string, pollMs: PollIntervals): CallToolResult =>
 	({
 		resultType: "task",
-		...taskView(taskIdOf(askId, turn), {
-			status: "working",
-			createdAt: at,
-			lastUpdatedAt: at,
-			reply: null,
-		}),
+		...taskView(
+			taskIdOf(askId, turn),
+			{ status: "working", createdAt: at, lastUpdatedAt: at, reply: null },
+			pollMs,
+		),
 	}) as unknown as CallToolResult;
+
+/**
+ * What a blocking call that waited its whole budget answers: no reply yet, and how to keep waiting.
+ * Calling the same tool again with the same arguments rejoins the ask.
+ */
+const notYet = (tool: string, askId: string): CallToolResult => ({
+	content: [
+		{
+			type: "text",
+			text: `No reply yet. Call ${tool} again with the same arguments to keep waiting; it rejoins this ask.`,
+		},
+	],
+	structuredContent: { askId, reply: null },
+});
 
 /** Tells the client the call is alive, which keeps its idle timer from giving up on a long wait. */
 const reportProgress = (ctx: ServerContext, step: number) =>
@@ -284,22 +301,36 @@ const RECONNECTS = 8;
  * socket and tells the client it is alive. A socket dropped under the wait, by a restart or by the
  * space moving onto new code, is opened again, after a backoff that grows while it keeps dropping.
  * A call whose client has gone is interrupted before it takes the reply, which leaves it for the
- * client's retry. The ask was just opened or answered, so one that has vanished is a broken
- * invariant, not an error to report.
+ * client's retry. A call that has waited its budget answers that there is no reply yet, and the
+ * agent's next call rejoins the ask. The ask was just opened or answered, so one that has vanished
+ * is a broken invariant, not an error to report.
  */
-const replyTo = (ctx: ServerContext, space: SpaceClient, access: Access, askId: string) =>
+const replyTo = (
+	ctx: ServerContext,
+	space: SpaceClient,
+	access: Access,
+	askId: string,
+	tool: string,
+	budgets: Budgets,
+) =>
 	Effect.gen(function* () {
 		const spaces = yield* Spaces;
+		const until = Date.now() + budgets.waitMs;
 		let step = 0;
 		let drops = 0;
 		for (;;) {
 			const taken = yield* Effect.scoped(
 				Effect.gen(function* () {
 					const waiter = yield* spaces.wait(access, askId);
-					for (let lap = 0; ; lap += 1) {
+					for (;;) {
+						const left = until - Date.now();
+						if (left <= 0) return notYet(tool, askId);
 						yield* reportProgress(ctx, step);
 						step += 1;
-						const said = yield* Effect.timeoutOption(waiter.next, LAP_MS);
+						const said = yield* Effect.timeoutOption(
+							waiter.next,
+							Math.min(budgets.keepAliveMs, left),
+						);
 						if (Option.isNone(said)) {
 							// A lap with the socket alive: the drops before it are behind us.
 							drops = 0;
@@ -324,7 +355,7 @@ const replyTo = (ctx: ServerContext, space: SpaceClient, access: Access, askId: 
 		}
 	}).pipe(Effect.catchTag("AskNotFound", Effect.die));
 
-const server = ({ runtime, access, origin, requestId, inboxUrl }: McpCaller) => {
+const server = ({ runtime, access, origin, requestId, inboxUrl, budgets }: McpCaller) => {
 	const mcp = new McpServer({ name: "loopback", version: VERSION }, { instructions: INSTRUCTIONS });
 	// Loopback's tools never change, and it publishes nothing else, so a client's
 	// `subscriptions/listen` is acknowledged and closed at once rather than held open for hours.
@@ -353,6 +384,7 @@ const server = ({ runtime, access, origin, requestId, inboxUrl }: McpCaller) => 
 	 * since that is the only way it can receive one.
 	 */
 	const settle = (
+		tool: string,
 		ctx: ServerContext,
 		space: SpaceClient,
 		askId: string,
@@ -360,8 +392,8 @@ const server = ({ runtime, access, origin, requestId, inboxUrl }: McpCaller) => 
 		at: string,
 	): Effect.Effect<CallToolResult, never, Spaces> =>
 		supportsTasks(ctx)
-			? Effect.succeed(started(askId, turn, at))
-			: replyTo(ctx, space, access, askId);
+			? Effect.succeed(started(askId, turn, at, budgets.pollMs))
+			: replyTo(ctx, space, access, askId, tool, budgets);
 
 	/** Runs a `tasks/*` request against the task's ask; an ask or turn the space does not know is no task. */
 	const task = async (
@@ -389,14 +421,14 @@ const server = ({ runtime, access, origin, requestId, inboxUrl }: McpCaller) => 
 			throw new ProtocolError(ProtocolErrorCode.InternalError, died(error));
 		});
 		if (found === null) throw unknownTask(taskId);
-		return taskView(taskId, found.state, found.briefing);
+		return taskView(taskId, found.state, budgets.pollMs, found.briefing);
 	};
 
 	mcp.server.registerCapabilities({ extensions: { [TASKS_EXTENSION]: {} } });
 	const taskParams = z.object({ taskId: z.string() });
 
 	mcp.server.setRequestHandler("tasks/get", { params: taskParams }, ({ taskId }, ctx) =>
-		task(ctx, taskId, (space, askId, turn) => space.followTask(askId, turn, POLL_INTERVALS)),
+		task(ctx, taskId, (space, askId, turn) => space.followTask(askId, turn, budgets.pollMs)),
 	);
 
 	mcp.server.setRequestHandler("tasks/cancel", { params: taskParams }, async ({ taskId }, ctx) => {
@@ -407,7 +439,7 @@ const server = ({ runtime, access, origin, requestId, inboxUrl }: McpCaller) => 
 	// Loopback's tasks never ask the client for input, so there is nothing to update: input
 	// responses a server does not recognise are ignored.
 	mcp.server.setRequestHandler("tasks/update", { params: taskParams }, async ({ taskId }, ctx) => {
-		await task(ctx, taskId, (space, askId, turn) => space.followTask(askId, turn, POLL_INTERVALS));
+		await task(ctx, taskId, (space, askId, turn) => space.followTask(askId, turn, budgets.pollMs));
 		return {};
 	});
 
@@ -437,7 +469,7 @@ const server = ({ runtime, access, origin, requestId, inboxUrl }: McpCaller) => 
 						actor: access.actor,
 						...(client === undefined ? {} : { client }),
 					});
-					return yield* settle(ctx, space, ask.id, ...latestTurn(ask));
+					return yield* settle("ask_question", ctx, space, ask.id, ...latestTurn(ask));
 				}).pipe(
 					Effect.catchTag(["ContentInvalid", "Declined"], (error) =>
 						Effect.succeed(refused(error.reason)),
@@ -465,7 +497,7 @@ const server = ({ runtime, access, origin, requestId, inboxUrl }: McpCaller) => 
 						actor: access.actor,
 						...(client === undefined ? {} : { client }),
 					});
-					return yield* settle(ctx, space, ask.id, ...latestTurn(ask));
+					return yield* settle("request_review", ctx, space, ask.id, ...latestTurn(ask));
 				}).pipe(
 					Effect.catchTag(["ContentInvalid", "Declined"], (error) =>
 						Effect.succeed(refused(error.reason)),
@@ -488,7 +520,14 @@ const server = ({ runtime, access, origin, requestId, inboxUrl }: McpCaller) => 
 				Effect.gen(function* () {
 					const ask = yield* space.answerFollowUp(input);
 					const answer = ask.thread.at(-1);
-					return yield* settle(ctx, space, ask.id, ask.thread.length, answer?.at ?? ask.updatedAt);
+					return yield* settle(
+						"answer_follow_up",
+						ctx,
+						space,
+						ask.id,
+						ask.thread.length,
+						answer?.at ?? ask.updatedAt,
+					);
 				}).pipe(
 					Effect.catchTags({
 						AskNotFound: () => Effect.succeed(refused(`No ask "${input.askId}".`)),
@@ -525,7 +564,7 @@ const server = ({ runtime, access, origin, requestId, inboxUrl }: McpCaller) => 
 						actor: access.actor,
 						...(client === undefined ? {} : { client }),
 					});
-					return yield* settle(ctx, space, ask.id, ...latestTurn(ask));
+					return yield* settle("send_briefing", ctx, space, ask.id, ...latestTurn(ask));
 				}).pipe(
 					Effect.catchTag(["ContentInvalid", "Declined"], (error) =>
 						Effect.succeed(refused(error.reason)),
@@ -549,7 +588,14 @@ const server = ({ runtime, access, origin, requestId, inboxUrl }: McpCaller) => 
 					// A retried move rejoins the turn it first took, which may no longer be the last.
 					const { ask, turn } = yield* space.answerBriefing(input);
 					const answer = ask.thread[turn - 1];
-					return yield* settle(ctx, space, ask.id, turn, answer?.at ?? ask.updatedAt);
+					return yield* settle(
+						"answer_briefing",
+						ctx,
+						space,
+						ask.id,
+						turn,
+						answer?.at ?? ask.updatedAt,
+					);
 				}).pipe(
 					Effect.catchTags({
 						AskNotFound: () => Effect.succeed(refused(`No briefing "${input.askId}".`)),
@@ -636,7 +682,7 @@ const server = ({ runtime, access, origin, requestId, inboxUrl }: McpCaller) => 
  * The MCP endpoint. The gate runs first; what it established reaches the per-request server
  * through the `authInfo` the SDK passes along untouched.
  */
-export const makeMcp = (inboxUrl: (link: InboxLink) => string) => {
+export const makeMcp = (inboxUrl: (link: InboxLink) => string, budgets: Budgets) => {
 	const callers = new WeakMap<AuthInfo, McpCaller>();
 	const handler = createMcpHandler(
 		(ctx) => {
@@ -646,7 +692,7 @@ export const makeMcp = (inboxUrl: (link: InboxLink) => string) => {
 			return server(caller);
 		},
 		// Always stream, so a long wait starts its response at once and keep-alive frames flow.
-		{ responseMode: "sse" },
+		{ responseMode: "sse", keepAliveMs: budgets.keepAliveMs },
 	);
 	return (request: Request, runtime: WorkerRuntime, access: Access, requestId: string) => {
 		const authInfo: AuthInfo = { token: "", clientId: access.actor.id, scopes: [] };
@@ -656,6 +702,7 @@ export const makeMcp = (inboxUrl: (link: InboxLink) => string) => {
 			origin: new URL(request.url).origin,
 			requestId,
 			inboxUrl,
+			budgets,
 		});
 		return handler.fetch(request, { authInfo });
 	};

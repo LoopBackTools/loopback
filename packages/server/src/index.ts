@@ -1,4 +1,5 @@
 export { createLoopback, type LoopbackOptions } from "./loopback.ts";
+export { type Budgets, budgetsFor, PLANS, type Plan } from "./budgets.ts";
 export { VERSION } from "./version.ts";
 export { Space } from "./space/object.ts";
 export { Declined, RateLimited, Unauthorized } from "./domain/errors.ts";
