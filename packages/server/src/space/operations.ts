@@ -45,7 +45,12 @@ import {
 	UploadNotFound,
 	UploadRejected,
 } from "../domain/errors.ts";
-import { FOLLOW_SLACK_MS, type PollIntervals, pollEvery } from "../domain/polling.ts";
+import {
+	FOLLOW_SLACK_MS,
+	POLL_INTERVALS,
+	type PollIntervals,
+	pollEvery,
+} from "../domain/polling.ts";
 import { Host } from "./services.ts";
 import { AskStore, TicketStore, UploadStore } from "./store.ts";
 
@@ -428,16 +433,23 @@ export const answerBriefing = Effect.fn("Space.answerBriefing")(function* (
 });
 
 /**
- * The reply the agent has not yet taken, or `null` when there is none. It stays the agent's to take
- * until `markDelivered` says it reached them, so a wait whose caller has gone loses nothing.
+ * The person's reply to the agent's turn `afterSeq` (0 for opening the ask), or `null` while there
+ * is none: the first one the agent hasn't been handed yet, or else the last one it has. A reply
+ * stays the agent's to take until `markDelivered` says it reached them, so a wait whose caller has
+ * gone loses nothing; and a second call waiting on the same turn, a retry that rejoined while the
+ * first still waited, gets it too, though the first was handed it a moment before.
  */
-export const takeReply = Effect.fn("Space.takeReply")(function* (askId: string) {
+export const takeReply = Effect.fn("Space.takeReply")(function* (askId: string, afterSeq: number) {
 	const store = yield* AskStore;
 	yield* findAsk(askId);
-	const entry = yield* store.undelivered(askId);
-	if (Option.isNone(entry) || entry.value.entry.author !== "human") return null;
-	const delivery: Delivery = { askId, reply: entry.value.entry.reply, seq: entry.value.seq };
-	return delivery;
+	let handed: Delivery | null = null;
+	for (const row of yield* store.thread(askId)) {
+		if (row.seq <= afterSeq || row.entry.author !== "human") continue;
+		const delivery: Delivery = { askId, reply: row.entry.reply, seq: row.seq };
+		if (row.deliveredAt === null) return delivery;
+		handed = delivery;
+	}
+	return handed;
 });
 
 /**
@@ -445,13 +457,16 @@ export const takeReply = Effect.fn("Space.takeReply")(function* (askId: string) 
  * for the reattach window, and inboxes hear it when that starts the ask being followed. True when a
  * reply is already there for it to take.
  */
-export const startWaiting = Effect.fn("Space.startWaiting")(function* (askId: string) {
+export const startWaiting = Effect.fn("Space.startWaiting")(function* (
+	askId: string,
+	afterSeq: number,
+) {
 	const host = yield* Host;
 	const record = yield* findAsk(askId);
 	const at = yield* now;
 	yield* noteWaiting(record, at);
 	if (host.waiters(askId) === 1 && !followed(record, at)) yield* announceFollowing(askId);
-	return (yield* takeReply(askId)) !== null;
+	return (yield* takeReply(askId, afterSeq)) !== null;
 });
 
 /**
@@ -528,7 +543,7 @@ const locateTask = Effect.fnUntraced(function* (askId: string, afterSeq: number)
 export const followTask = Effect.fn("Space.followTask")(function* (
 	askId: string,
 	afterSeq: number,
-	intervals: PollIntervals,
+	intervals: PollIntervals = POLL_INTERVALS,
 ) {
 	const store = yield* AskStore;
 	const { record, startedAt, answer } = yield* locateTask(askId, afterSeq);

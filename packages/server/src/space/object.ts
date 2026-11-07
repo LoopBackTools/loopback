@@ -44,7 +44,7 @@ type Accepted =
 const waitTag = (askId: string) => `wait:${askId}`;
 
 /** Where a Worker opens a wait on an ask. */
-const WAIT_PATH = /^\/wait\/([^/]+)$/;
+const WAIT_PATH = /^\/wait\/([^/]+)\/(\d+)$/;
 
 /** The close code an inbox reconnects after when the space is now on other code: Service Restart. */
 const RECONNECT_ONTO_NEW_CODE = 1012;
@@ -126,7 +126,8 @@ export class Space extends DurableObject {
 	 * the contract, it refuses, running nothing, and restarts onto that code a moment later, once the
 	 * refusal is on its way; whatever reaches it until then is refused the same way. A caller retries
 	 * what was refused. Older code calling a newer space carries on, as does code from before callers
-	 * named their version, which passes nothing.
+	 * named their version, which passes nothing; an operation the newer space no longer has (as
+	 * `awaitReply`, before waits moved into the Worker) fails, and its call ends with an incident.
 	 */
 	#outdatedFor(
 		caller:
@@ -169,7 +170,7 @@ export class Space extends DurableObject {
 
 	/**
 	 * Accepts a WebSocket: an inbox's event socket, sent the space as it stands, or an agent's wait on
-	 * one ask (`/wait/<askId>`), which is only ever sent the reply frame.
+	 * one turn of an ask (`/wait/<askId>/<afterSeq>`), which is only ever sent the reply frame.
 	 */
 	override async fetch(request: Request): Promise<Response> {
 		if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
@@ -187,10 +188,10 @@ export class Space extends DurableObject {
 				headers: { "Retry-After": "1" },
 			});
 		}
-		const waitingOn = WAIT_PATH.exec(new URL(request.url).pathname)?.[1];
-		return waitingOn === undefined
+		const waiting = WAIT_PATH.exec(new URL(request.url).pathname);
+		return waiting === null
 			? this.#acceptInbox(request)
-			: this.#acceptWait(decodeURIComponent(waitingOn));
+			: this.#acceptWait(decodeURIComponent(waiting[1] ?? ""), Number(waiting[2]));
 	}
 
 	async #acceptInbox(request: Request): Promise<Response> {
@@ -219,7 +220,7 @@ export class Space extends DurableObject {
 	 * reply is already there is woken at once. While the space holds nothing but wait sockets it can
 	 * hibernate: a reply wakes it, and it wakes the waiters.
 	 */
-	async #acceptWait(askId: string): Promise<Response> {
+	async #acceptWait(askId: string, afterSeq: number): Promise<Response> {
 		const { 0: client, 1: server } = new WebSocketPair();
 		this.ctx.acceptWebSocket(server, [waitTag(askId)]);
 		const accepted: Accepted = {
@@ -230,7 +231,7 @@ export class Space extends DurableObject {
 		};
 		server.serializeAttachment(accepted);
 		const started = await this.#runtime.runPromise(
-			startWaiting(askId).pipe(
+			startWaiting(askId, afterSeq).pipe(
 				Effect.catchTag("AskNotFound", () => Effect.succeed("missing" as const)),
 			),
 		);

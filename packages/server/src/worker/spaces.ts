@@ -54,6 +54,7 @@ export class Spaces extends Context.Service<
 		readonly wait: (
 			access: Access,
 			askId: string,
+			afterSeq: number,
 		) => Effect.Effect<Waiter, AskNotFound | SpaceUnavailable, Scope.Scope>;
 	}
 >()("loopback/Spaces") {
@@ -90,10 +91,10 @@ export class Spaces extends Context.Service<
 						: stubOf(space)
 					).fetch(named(request)),
 				),
-			wait: (access, askId) =>
+			wait: (access, askId, afterSeq) =>
 				Effect.acquireRelease(
 					Effect.gen(function* () {
-						const upgrade = new Request(`http://space${waitPath(askId)}`, {
+						const upgrade = new Request(`http://space${waitPath(askId, afterSeq)}`, {
 							headers: { Upgrade: "websocket" },
 						});
 						const response = yield* Effect.tryPromise({

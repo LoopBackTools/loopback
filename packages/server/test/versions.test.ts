@@ -234,6 +234,23 @@ describe("a space reading what it is called with", () => {
 	);
 
 	it.live(
+		"takes a task poll from a Worker still on code that sends no poll intervals",
+		() =>
+			Effect.gen(function* () {
+				const space = spaceClient(freshSpace(), caller);
+				const ask = yield* space.open(question("Polled by older code?"));
+				// Older code polls with the ask and the turn only.
+				const poll = space.followTask as unknown as (
+					askId: string,
+					afterSeq: number,
+				) => typeof space.followTask extends (...args: never[]) => infer R ? R : never;
+				expect(yield* poll(ask.id, 0)).toMatchObject({ status: "working" });
+				expect((yield* space.get(ask.id)).waiting).toBe(true);
+			}),
+		COLD_START,
+	);
+
+	it.live(
 		"refuses arguments of the wrong shape",
 		() =>
 			Effect.gen(function* () {

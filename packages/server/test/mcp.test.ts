@@ -8,9 +8,9 @@ import {
 	runInDurableObject,
 } from "cloudflare:test";
 import { env, exports } from "cloudflare:workers";
-import { Effect } from "effect";
+import { Effect, Layer } from "effect";
 import packageJson from "../package.json" with { type: "json" };
-import { ConfiguredGate, createLoopback, DEFAULT_SPACE } from "../src/index.ts";
+import { ConfiguredGate, createLoopback, DEFAULT_SPACE, Spaces } from "../src/index.ts";
 import { questionInputSchema } from "../src/generated/schemas.gen.ts";
 import { spaceClient } from "../src/space/rpc.ts";
 import { eraseSpace } from "../src/worker/spaces.ts";
@@ -774,4 +774,57 @@ describe("a deployment's wait budget", () => {
 		});
 		await client.close();
 	});
+});
+
+describe("two calls waiting on one ask", () => {
+	/** A deployment whose calls take their reply 300 ms late, as a busy isolate would. */
+	const slowTake = Layer.effect(
+		Spaces,
+		Effect.gen(function* () {
+			const spaces = yield* Spaces;
+			return Spaces.of({
+				...spaces,
+				of: (access) => {
+					const space = spaces.of(access);
+					return {
+						...space,
+						takeReply: (...args) => Effect.delay(space.takeReply(...args), "300 millis"),
+					};
+				},
+			});
+		}),
+	).pipe(Layer.provide(Spaces.layer));
+	const slow = createLoopback({ gate: ConfiguredGate, spaces: slowTake });
+
+	it("hands the reply to both, though one takes it after the other has", async () => {
+		const settings = { ...env };
+		const quick = await connectWith("auto");
+		const late = new Client(
+			{ name: "loopback-test", version: "1.0.0" },
+			{ versionNegotiation: { mode: "auto" } },
+		);
+		await late.connect(
+			new StreamableHTTPClientTransport(new URL(`${ORIGIN}/mcp`), {
+				fetch: async (url, init) =>
+					slow.fetch(new Request(url, init), settings, createExecutionContext()),
+				requestInit: { headers: { Authorization: `Bearer ${env.LOOPBACK_TOKEN}` } },
+			}),
+		);
+		const input = { question: "Both of us?", project: "mcp-test" };
+		const first = quick.callTool({ name: "ask_question", arguments: input });
+		const ask = await opened(
+			(open) => open.kind === "question" && open.prompt.question === input.question,
+		);
+		// The same call again, as a retry would make it, rejoins the ask while the first still waits.
+		const second = late.callTool({ name: "ask_question", arguments: input });
+		await pause(500);
+		await reply(ask.id, { outcome: "answered", selected: [], text: "Both" });
+		const within = <T>(call: Promise<T>) =>
+			Promise.race([call, pause(4_000).then(() => "still waiting" as const)]);
+		const expected = { askId: ask.id, reply: { outcome: "answered", selected: [], text: "Both" } };
+		expect(await within(first)).toMatchObject({ structuredContent: expected });
+		expect(await within(second)).toMatchObject({ structuredContent: expected });
+		await quick.close();
+		await late.close();
+	}, 15_000);
 });

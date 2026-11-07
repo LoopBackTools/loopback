@@ -76,13 +76,13 @@ const connect = async (stub: DurableObjectStub) => {
 	return framesOf(response.webSocket, (data) => JSON.parse(data) as ServerEvent);
 };
 
-/** An agent's wait on one ask, as the Worker holds it: the space's answer to the upgrade. */
-const upgradeWait = (stub: DurableObjectStub, askId: string) =>
-	stub.fetch(`http://space/wait/${askId}`, { headers: { Upgrade: "websocket" } });
+/** An agent's wait on one turn of an ask, as the Worker holds it: the space's answer to the upgrade. */
+const upgradeWait = (stub: DurableObjectStub, askId: string, afterSeq = 0) =>
+	stub.fetch(`http://space/wait/${askId}/${afterSeq}`, { headers: { Upgrade: "websocket" } });
 
-/** An agent's wait on one ask, open. */
-const waitOn = async (stub: DurableObjectStub, askId: string) => {
-	const response = await upgradeWait(stub, askId);
+/** An agent's wait on one turn of an ask, open. */
+const waitOn = async (stub: DurableObjectStub, askId: string, afterSeq = 0) => {
+	const response = await upgradeWait(stub, askId, afterSeq);
 	expect(response.status).toBe(101);
 	if (response.webSocket === null) throw new Error("no socket");
 	return framesOf(response.webSocket, (data) => data);
@@ -108,7 +108,7 @@ describe("waiting", () => {
 			expect((yield* space.get(ask.id)).waiting).toBe(true);
 			yield* space.reply(ask.id, { outcome: "approved", note: "Ship it" }, OWNER);
 			expect(yield* Effect.promise(() => waiter.until(1))).toEqual(["reply"]);
-			expect(yield* space.takeReply(ask.id)).toEqual({
+			expect(yield* space.takeReply(ask.id, 0)).toEqual({
 				askId: ask.id,
 				reply: { outcome: "approved", note: "Ship it" },
 				seq: 1,
@@ -156,6 +156,18 @@ describe("waiting", () => {
 			yield* Effect.promise(() => evictDurableObject(stub));
 			expect((yield* space.get(ask.id)).waiting).toBe(true);
 			yield* space.reply(ask.id, { outcome: "approved" }, OWNER);
+			expect(yield* Effect.promise(() => waiter.until(1))).toEqual(["reply"]);
+			waiter.socket.close();
+		}),
+	);
+
+	it.live("wakes a waiter whose reply another call has already taken", () =>
+		Effect.gen(function* () {
+			const { stub, space } = fresh();
+			const ask = yield* space.open({ actor: OWNER, kind: "question", input: colour });
+			yield* space.reply(ask.id, { outcome: "answered", selected: ["Red"] }, OWNER);
+			yield* space.markDelivered(ask.id, 1);
+			const waiter = yield* Effect.promise(() => waitOn(stub, ask.id, 0));
 			expect(yield* Effect.promise(() => waiter.until(1))).toEqual(["reply"]);
 			waiter.socket.close();
 		}),
@@ -231,16 +243,19 @@ describe("asks", () => {
 			const closed = yield* space.reply(ask.id, { outcome: "answered", selected: ["Blue"] }, OWNER);
 			expect(closed.status).toBe("closed");
 			expect(closed.closedAt).toBeDefined();
-			const handed = yield* space.takeReply(ask.id);
+			const handed = yield* space.takeReply(ask.id, 0);
 			expect(handed).toEqual({
 				askId: ask.id,
 				reply: { outcome: "answered", selected: ["Blue"] },
 				seq: 1,
 			});
 			// A wait cut off before the agent took the reply hands it over again.
-			expect(yield* space.takeReply(ask.id)).toEqual(handed);
+			expect(yield* space.takeReply(ask.id, 0)).toEqual(handed);
 			yield* space.markDelivered(ask.id, 1);
-			expect(yield* space.takeReply(ask.id)).toBeNull();
+			// Another call waiting on the same turn still gets it once one has taken it.
+			expect(yield* space.takeReply(ask.id, 0)).toEqual(handed);
+			// A later turn has no reply yet.
+			expect(yield* space.takeReply(ask.id, 1)).toBeNull();
 		}),
 	);
 
@@ -275,7 +290,7 @@ describe("asks", () => {
 				OWNER,
 			);
 			expect(asked.status).toBe("awaiting_agent");
-			expect(yield* space.takeReply(ask.id)).toMatchObject({
+			expect(yield* space.takeReply(ask.id, 0)).toMatchObject({
 				reply: { outcome: "follow_up", question: "Why this tone?" },
 			});
 			const answered = yield* space.answerFollowUp({
@@ -577,7 +592,7 @@ describe("retries", () => {
 			yield* space.reply(first.id, { outcome: "answered", selected: ["Red"] }, OWNER);
 			const retried = yield* space.open({ actor: OWNER, kind: "question", input: colour });
 			expect(retried.id).toBe(first.id);
-			const handed = yield* space.takeReply(retried.id);
+			const handed = yield* space.takeReply(retried.id, 0);
 			expect(handed).toMatchObject({ reply: { outcome: "answered", selected: ["Red"] } });
 			// Until the agent takes the reply, asking again is still a retry.
 			expect((yield* space.open({ actor: OWNER, kind: "question", input: colour })).id).toBe(
@@ -832,7 +847,7 @@ describe("briefings", () => {
 			const closed = yield* space.reply(ask.id, closing, OWNER);
 			expect(closed.status).toBe("closed");
 			expect(closed.closedAt).toBeDefined();
-			expect(yield* space.takeReply(ask.id)).toMatchObject({ reply: closing });
+			expect(yield* space.takeReply(ask.id, 0)).toMatchObject({ reply: closing });
 		}),
 	);
 
@@ -902,7 +917,7 @@ describe("briefings", () => {
 				const again = yield* space.answerBriefing(move);
 				expect(again.turn).toBe(first.turn);
 				expect(again.ask.thread).toHaveLength(first.ask.thread.length + 1);
-				expect(yield* space.takeReply(ask.id)).toMatchObject({
+				expect(yield* space.takeReply(ask.id, 0)).toMatchObject({
 					reply: responded({ point: "1", text: "Which queries?" }),
 				});
 			}),
@@ -915,7 +930,7 @@ describe("briefings", () => {
 			const move = { askId: ask.id, answers: [{ point: "1", answer: "Queries." }] };
 			yield* space.answerBriefing(move);
 			yield* space.reply(ask.id, responded({ point: "1", text: "Which queries?" }), OWNER);
-			const delivered = yield* space.takeReply(ask.id);
+			const delivered = yield* space.takeReply(ask.id, 0);
 			yield* space.markDelivered(ask.id, delivered?.seq ?? 0);
 			yield* space.reply(ask.id, { outcome: "dismissed" }, OWNER);
 			const exit = yield* Effect.exit(space.answerBriefing(move));
@@ -937,7 +952,7 @@ describe("briefings", () => {
 			yield* space.reply(ask.id, closing, OWNER);
 			const again = yield* space.answerBriefing(move);
 			expect(again.turn).toBe(first.turn);
-			expect(yield* space.takeReply(ask.id)).toMatchObject({ reply: closing });
+			expect(yield* space.takeReply(ask.id, 0)).toMatchObject({ reply: closing });
 		}),
 	);
 
@@ -976,10 +991,10 @@ describe("briefings", () => {
 			const { space } = fresh();
 			const ask = yield* owing(space);
 			yield* space.reply(ask.id, { outcome: "dismissed" }, OWNER);
-			const first = yield* space.takeReply(ask.id);
+			const first = yield* space.takeReply(ask.id, 0);
 			expect(first).toMatchObject({ reply: responded({ point: "1", text: "Why D1?" }) });
 			yield* space.markDelivered(ask.id, first?.seq ?? 0);
-			expect(yield* space.takeReply(ask.id)).toMatchObject({ reply: { outcome: "dismissed" } });
+			expect(yield* space.takeReply(ask.id, 0)).toMatchObject({ reply: { outcome: "dismissed" } });
 		}),
 	);
 

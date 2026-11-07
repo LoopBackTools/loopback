@@ -31,8 +31,9 @@ export interface Caller {
  */
 export const REPLY_FRAME = "reply";
 
-/** Where a Worker opens an agent's wait on an ask. */
-export const waitPath = (askId: string) => `/wait/${encodeURIComponent(askId)}`;
+/** Where a Worker opens an agent's wait for the reply to its turn `afterSeq` of an ask. */
+export const waitPath = (askId: string, afterSeq: number) =>
+	`/wait/${encodeURIComponent(askId)}/${afterSeq}`;
 
 /** A deployment's build, from its version metadata binding, if it has one. */
 export const buildOf = (env: unknown): string | undefined => {

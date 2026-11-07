@@ -30,9 +30,11 @@ const taking = {
 	open: Schema.Tuple([OpenRequest]),
 	answerFollowUp: Schema.Tuple([Contract.FollowUpInput]),
 	answerBriefing: Schema.Tuple([Contract.BriefingAnswerInput]),
-	takeReply: Schema.Tuple([Id]),
+	takeReply: Schema.Tuple([Id, Count]),
 	markDelivered: Schema.Tuple([Id, Count]),
-	followTask: Schema.Tuple([Id, Count, Schema.Tuple([Count, Count, Count])]),
+	// Code from before deployments set their own poll intervals sends only the ask and the turn.
+	// Code from before deployments set their own poll intervals sends only the ask and the turn.
+	followTask: Schema.Tuple([Id, Count, Schema.optional(Schema.Tuple([Count, Count, Count]))]),
 	cancelTask: Schema.Tuple([Id, Count]),
 	reply: Schema.Tuple([Id, Contract.Reply, Contract.Actor]),
 	get: Schema.Tuple([Id]),

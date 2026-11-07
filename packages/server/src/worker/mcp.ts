@@ -310,6 +310,7 @@ const replyTo = (
 	space: SpaceClient,
 	access: Access,
 	askId: string,
+	turn: number,
 	tool: string,
 	budgets: Budgets,
 ) =>
@@ -321,7 +322,7 @@ const replyTo = (
 		for (;;) {
 			const taken = yield* Effect.scoped(
 				Effect.gen(function* () {
-					const waiter = yield* spaces.wait(access, askId);
+					const waiter = yield* spaces.wait(access, askId, turn);
 					for (;;) {
 						const left = until - Date.now();
 						if (left <= 0) return notYet(tool, askId);
@@ -338,7 +339,7 @@ const replyTo = (
 							continue;
 						}
 						if (said.value === "closed") return null;
-						const delivery = yield* space.takeReply(askId);
+						const delivery = yield* space.takeReply(askId, turn);
 						if (delivery !== null) {
 							yield* space.markDelivered(askId, delivery.seq);
 							return answered(delivery, yield* briefingFor(space, delivery));
@@ -393,7 +394,7 @@ const server = ({ runtime, access, origin, requestId, inboxUrl, budgets }: McpCa
 	): Effect.Effect<CallToolResult, never, Spaces> =>
 		supportsTasks(ctx)
 			? Effect.succeed(started(askId, turn, at, budgets.pollMs))
-			: replyTo(ctx, space, access, askId, tool, budgets);
+			: replyTo(ctx, space, access, askId, turn, tool, budgets);
 
 	/** Runs a `tasks/*` request against the task's ask; an ask or turn the space does not know is no task. */
 	const task = async (
