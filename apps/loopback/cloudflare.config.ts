@@ -1,9 +1,17 @@
 import { bindings, defineConfig, exports } from "cf/config";
 import * as entrypoint from "./src/worker.ts" with { type: "cf-worker" };
 
-export default defineConfig({
+/**
+ * `--mode cpu-check` deploys a separate copy, `loopback-cpu-check`, held to Workers Free's 10 ms of
+ * CPU per request, to check a change fits the free plan before it ships (scripts/cpu-check.ts drives
+ * it). Delete it afterwards with `cf workers delete loopback-cpu-check`.
+ */
+const CPU_CHECK = "cpu-check";
+
+export default defineConfig(({ mode }) => ({
 	worker: {
-		name: "loopback",
+		name: mode === CPU_CHECK ? "loopback-cpu-check" : "loopback",
+		...(mode === CPU_CHECK ? { limits: { cpuMs: 10 } } : {}),
 		entrypoint,
 		compatibilityDate: "2026-10-19",
 		// enable_request_signal: a request's signal aborts when its client goes away, so work for a
@@ -31,4 +39,4 @@ export default defineConfig({
 		// Durable Object binding names this Worker, and a copy deployed under another name still works.
 		exports: { Space: exports.durableObject({ storage: "sqlite" }) },
 	},
-});
+}));
