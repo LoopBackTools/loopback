@@ -1,0 +1,58 @@
+{
+	"name": "@loopbacktools/core",
+	"version": "0.7.1",
+	"description": "The Loopback core: its asks, the Space Durable Object and stored images, served to an edge over Workers RPC.",
+	"homepage": "https://github.com/LoopBackTools/loopback/tree/main/packages/core#readme",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/LoopBackTools/loopback.git",
+		"directory": "packages/core"
+	},
+	"files": [
+		"dist"
+	],
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts",
+		"./rpc": "./src/rpc.ts"
+	},
+	"publishConfig": {
+		"exports": {
+			".": {
+				"types": "./dist/src/index.d.ts",
+				"default": "./dist/src/index.js"
+			},
+			"./rpc": {
+				"types": "./dist/src/rpc.d.ts",
+				"default": "./dist/src/rpc.js"
+			}
+		},
+		"access": "public"
+	},
+	"scripts": {
+		"types": "cd test && cf workers types",
+		"typecheck": "pnpm types && tsc --noEmit && tsc --noEmit -p test/arch",
+		"test": "pnpm types && vitest run",
+		"build": "tsc -p tsconfig.build.json"
+	},
+	"dependencies": {
+		"@effect/sql-sqlite-do": "catalog:",
+		"@loopbacktools/protocol": "workspace:*"
+	},
+	"peerDependencies": {
+		"effect": "^4.0.6"
+	},
+	"devDependencies": {
+		"@cloudflare/vitest-plugin": "catalog:",
+		"@cloudflare/workers-types": "catalog:",
+		"@effect/vitest": "catalog:",
+		"@types/node": "catalog:",
+		"archunit": "catalog:",
+		"cf": "catalog:",
+		"effect": "catalog:",
+		"es-module-lexer": "catalog:",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
+	}
+}
