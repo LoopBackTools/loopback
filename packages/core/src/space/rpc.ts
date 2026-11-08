@@ -3,7 +3,6 @@ import {
 	AskClosed,
 	AskNotFound,
 	ContentInvalid,
-	type Declined,
 	NotYourTurn,
 	ReplyInvalid,
 	TicketInvalid,
@@ -98,19 +97,13 @@ export interface SpaceStub {
 	call(method: OperationName, args: readonly unknown[], caller: Caller): Promise<ExitJson>;
 }
 
-/** The operations a deployment may decline, wrapping the client: the ones that open something new. */
-export type Declinable = "open" | "createUpload";
-
-/**
- * A space's operations as seen from the Worker: the same signatures, with no services required. A
- * client a deployment wraps may also decline what it lets open; the space's own never does.
- */
+/** A space's operations as seen from the core Worker: the same signatures, with no services required. */
 export type SpaceClient = {
 	readonly [K in OperationName]: (
 		...args: Parameters<Operations[K]>
 	) => Effect.Effect<
 		Effect.Success<ReturnType<Operations[K]>>,
-		Effect.Error<ReturnType<Operations[K]>> | (K extends Declinable ? Declined : never)
+		Effect.Error<ReturnType<Operations[K]>>
 	>;
 };
 

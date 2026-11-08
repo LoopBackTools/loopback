@@ -1,9 +1,9 @@
 import { describe, expect, it } from "@effect/vitest";
 import { env, exports } from "cloudflare:workers";
 import { Effect } from "effect";
-import { eraseSpace } from "../src/index.ts";
+import { fileKey } from "../src/files.ts";
 import { spaceClient } from "../src/space/rpc.ts";
-import { fileKey } from "../src/worker/files.ts";
+import { core } from "./binding.ts";
 import { caller } from "./caller.ts";
 
 const OWNER = { id: "owner" };
@@ -26,6 +26,9 @@ const store = async (space: string, uploadId: string) => {
 	return key;
 };
 
+/** A host removing a tenant, through the binding, as an edge reaches the core. */
+const erase = (space: string) => core().erase(space);
+
 describe("erasing a space", () => {
 	it("deletes its asks and files, closes its inboxes, and leaves every other space alone", async () => {
 		await ask("doomed", "Keep this?");
@@ -42,7 +45,7 @@ describe("erasing a space", () => {
 		});
 		socket.accept();
 
-		await eraseSpace(env, "doomed");
+		await erase("doomed");
 
 		expect(await closed).toBe("The space was erased.");
 		const doomed = await Effect.runPromise(clientOf("doomed").snapshot());
@@ -59,7 +62,7 @@ describe("erasing a space", () => {
 
 	it("carries on as an empty space that takes new asks", async () => {
 		await ask("reused", "Before?");
-		await eraseSpace(env, "reused");
+		await erase("reused");
 		await ask("reused", "After?");
 		const reused = await Effect.runPromise(clientOf("reused").snapshot());
 		expect(reused.open.map((item) => item.kind === "question" && item.prompt.question)).toEqual([
@@ -68,9 +71,9 @@ describe("erasing a space", () => {
 	});
 
 	it("finishes on a second run what a first left, and erases a space that never held anything", async () => {
-		await eraseSpace(env, "never-used");
+		await erase("never-used");
 		await store("half-done", "left-behind");
-		await eraseSpace(env, "half-done");
+		await erase("half-done");
 		const listed = await env.FILES.list({
 			prefix: `spaces/${exports.Space.idFromName("half-done").toString()}/`,
 		});

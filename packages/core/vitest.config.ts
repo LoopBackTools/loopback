@@ -14,6 +14,7 @@ export default defineConfig({
 					name: "workers",
 					include: ["test/**/*.test.ts"],
 					exclude: ["test/arch/**"],
+					setupFiles: ["./test/setup.ts"],
 					// A runtime that has run one test file can crash starting the next (the pool's
 					// connection to workerd closes with 1009, "Message is too large") once their module
 					// graphs are large enough. With a slot for every file, no file starts in a runtime

@@ -1,14 +1,10 @@
-import type { QuestionInput } from "@loopbacktools/protocol";
+import type { QuestionInput, Reply } from "@loopbacktools/protocol";
 import { REVISION } from "@loopbacktools/protocol/schema";
-import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
-import type { Caller } from "../src/rpc.ts";
+import { type Caller, operationsOf } from "../src/rpc.ts";
+import { core } from "./binding.ts";
 
-/**
- * The core as an edge reaches it: every call goes through `env.CORE`, a service binding to this
- * Worker's own `Core` entrypoint, so arguments and answers cross a real binding.
- */
-const core = () => env.CORE;
+/** The core through its binding, as an edge reaches it: the inbox's operations, uploads and sockets. */
 
 const callerIn = (space: string): Caller => ({ space, actor: { id: "owner" } });
 
@@ -18,8 +14,8 @@ const colour: QuestionInput = {
 	project: "loopback",
 };
 
-const bytes = (...values: number[]) =>
-	new ReadableStream<Uint8Array>({
+const bytes = (...values: number[]): ReadableStream<Uint8Array> =>
+	new ReadableStream({
 		type: "bytes",
 		start(controller) {
 			controller.enqueue(new Uint8Array(values));
@@ -27,8 +23,9 @@ const bytes = (...values: number[]) =>
 		},
 	});
 
-const read = async (body: ReadableStream<Uint8Array>) =>
-	[...new Uint8Array(await new Response(body).arrayBuffer())];
+const read = async (body: ReadableStream<Uint8Array>) => [
+	...new Uint8Array(await new Response(body).arrayBuffer()),
+];
 
 const firstFrame = (socket: WebSocket) =>
 	new Promise<unknown>((resolve) => {
@@ -70,7 +67,7 @@ describe("the core, through its binding", () => {
 		const caller = callerIn(crypto.randomUUID());
 		const opened = await core().askQuestion(caller, colour);
 		if (opened.outcome !== "started") throw new Error(opened.outcome);
-		const reply = { outcome: "answered", selected: ["Red"] } as const;
+		const reply: Reply = { outcome: "answered", selected: ["Red"] };
 		expect((await core().Asks_reply(caller, { id: opened.askId, reply })).status).toBe(200);
 		expect(await core().Asks_reply(caller, { id: opened.askId, reply })).toMatchObject({
 			status: 409,
@@ -97,7 +94,10 @@ describe("the core, through its binding", () => {
 		}
 		if (askId === undefined) throw new Error("The question never opened.");
 		await new Promise((resolve) => setTimeout(resolve, 500));
-		await core().Asks_reply(caller, { id: askId, reply: { outcome: "answered", selected: ["Red"] } });
+		await core().Asks_reply(caller, {
+			id: askId,
+			reply: { outcome: "answered", selected: ["Red"] },
+		});
 		const outcome = await waiting;
 		expect(outcome).toMatchObject({ outcome: "replied", askId });
 		if (outcome.outcome !== "replied") return;
@@ -165,6 +165,27 @@ describe("the core, through its binding", () => {
 		expect(stored.status).toBe(404);
 	});
 
+	it("refuses an image over the limit before spending its ticket", async () => {
+		const caller = callerIn(crypto.randomUUID());
+		const issued = await core().createUpload(caller, "image/png");
+		if (issued.outcome !== "issued") throw new Error(issued.outcome);
+		const upload = {
+			spaceId: issued.spaceId,
+			token: issued.token,
+			"Content-Type": "image/png",
+		} as const;
+		expect(
+			await core().Uploads_store(caller, {
+				...upload,
+				length: issued.maxBytes + 1,
+				body: bytes(1, 2, 3),
+			}),
+		).toMatchObject({ status: 413, body: { code: "upload.too_large" } });
+		expect(
+			await core().Uploads_store(caller, { ...upload, length: 3, body: bytes(1, 2, 3) }),
+		).toMatchObject({ status: 201, body: { uploadId: issued.uploadId, size: 3 } });
+	});
+
 	it("accepts an inbox's socket by ticket, sending the space first", async () => {
 		const caller = callerIn(crypto.randomUUID());
 		const issued = await core().EventTickets_issue(caller, {});
@@ -208,6 +229,29 @@ describe("the core, through its binding", () => {
 			body: { open: [], recent: [] },
 		});
 		expect((await core().Files_read(caller, { uploadId: issued.uploadId })).status).toBe(404);
+	});
+
+	it("hands an edge the contract's operations and nothing else, each through the binding", async () => {
+		const operations = operationsOf(core());
+		expect(Object.keys(operations).toSorted()).toEqual([
+			"Asks_list",
+			"Asks_read",
+			"Asks_reply",
+			"EventTickets_issue",
+			"Files_read",
+			"Session_whoami",
+			"Snapshots_read",
+			"Uploads_store",
+		]);
+		const caller = callerIn(crypto.randomUUID());
+		expect(await operations.Session_whoami(caller, {})).toEqual({
+			status: 200,
+			body: { space: caller.space, actor: { id: "owner" } },
+		});
+		expect(await operations.Asks_list(caller, {})).toEqual({
+			status: 200,
+			body: { items: [] },
+		});
 	});
 
 	it("says which revision of the contract it speaks", async () => {

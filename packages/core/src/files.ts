@@ -1,6 +1,5 @@
 import { Context, Effect, Layer, Option } from "effect";
-import { UploadIncomplete } from "../domain/errors.ts";
-import { WorkerEnv } from "./env.ts";
+import { UploadIncomplete } from "./domain/errors.ts";
 
 /** Uploaded images, kept in R2 under the space that holds them. */
 export class Files extends Context.Service<
@@ -18,13 +17,14 @@ export class Files extends Context.Service<
 			contentType: string,
 		) => Effect.Effect<void, UploadIncomplete>;
 		readonly get: (key: string) => Effect.Effect<Option.Option<ReadableStream<Uint8Array>>>;
+		/** Deletes every file a space holds. Running it again finishes what a failed run left. */
+		readonly erase: (spaceId: string) => Effect.Effect<void>;
 	}
 >()("loopback/Files") {
-	static readonly layer = Layer.effect(
-		Files,
-		Effect.gen(function* () {
-			const env = yield* WorkerEnv;
-			return Files.of({
+	static readonly layer = (bucket: R2Bucket) =>
+		Layer.succeed(
+			Files,
+			Files.of({
 				put: (key, body, length, contentType) =>
 					Effect.gen(function* () {
 						const sized = new FixedLengthStream(length);
@@ -45,7 +45,7 @@ export class Files extends Context.Service<
 						);
 						const [stored, piped] = yield* Effect.promise(() =>
 							Promise.allSettled([
-								env.FILES.put(key, sized.readable, { httpMetadata: { contentType } }),
+								bucket.put(key, sized.readable, { httpMetadata: { contentType } }),
 								counted.pipeTo(sized.writable),
 							]),
 						);
@@ -54,13 +54,20 @@ export class Files extends Context.Service<
 						if (piped.status === "rejected") return yield* Effect.die(piped.reason);
 					}),
 				get: (key) =>
-					Effect.promise(() => env.FILES.get(key)).pipe(
+					Effect.promise(() => bucket.get(key)).pipe(
 						Effect.map((object) => Option.map(Option.fromNullishOr(object), (found) => found.body)),
 					),
-			});
-		}),
-	);
+				erase: (spaceId) => Effect.promise(() => eraseUnder(bucket, filesOf(spaceId))),
+			}),
+		);
 }
+
+/** Deletes every file under a prefix, a page of listings at a time. */
+const eraseUnder = async (bucket: R2Bucket, prefix: string): Promise<void> => {
+	const listed = await bucket.list({ prefix, limit: 1000 });
+	if (listed.objects.length > 0) await bucket.delete(listed.objects.map(({ key }) => key));
+	if (listed.truncated) await eraseUnder(bucket, prefix);
+};
 
 /** Where every file a space holds lives, under one prefix. */
 export const filesOf = (spaceId: string) => `spaces/${spaceId}/`;

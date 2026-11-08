@@ -40,9 +40,6 @@
 		"@effect/sql-sqlite-do": "catalog:",
 		"@loopbacktools/protocol": "workspace:*"
 	},
-	"peerDependencies": {
-		"effect": "^4.0.6"
-	},
 	"devDependencies": {
 		"@cloudflare/vitest-plugin": "catalog:",
 		"@cloudflare/workers-types": "catalog:",
@@ -54,5 +51,8 @@
 		"es-module-lexer": "catalog:",
 		"typescript": "catalog:",
 		"vitest": "catalog:"
+	},
+	"peerDependencies": {
+		"effect": "^4.0.6"
 	}
 }
