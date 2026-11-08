@@ -2,7 +2,7 @@ import type { QuestionInput, Reply } from "@loopbacktools/protocol";
 import { REVISION } from "@loopbacktools/protocol/schema";
 import { describe, expect, it } from "vitest";
 import { type Caller, operationsOf } from "../src/rpc.ts";
-import { core } from "./binding.ts";
+import { core, coreByDefault } from "./binding.ts";
 
 /** The core through its binding, as an edge reaches it: the inbox's operations, uploads and sockets. */
 
@@ -39,6 +39,14 @@ describe("the core, through its binding", () => {
 	it("says who is calling", async () => {
 		const caller = callerIn(crypto.randomUUID());
 		expect(await core().Session_whoami(caller, {})).toEqual({
+			status: 200,
+			body: { space: caller.space, actor: { id: "owner" } },
+		});
+	});
+
+	it("answers RPC on its default export, as dispatch reaches it", async () => {
+		const caller = callerIn(crypto.randomUUID());
+		expect(await coreByDefault().Session_whoami(caller, {})).toEqual({
 			status: 200,
 			body: { space: caller.space, actor: { id: "owner" } },
 		});

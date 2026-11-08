@@ -7,3 +7,9 @@ import type { Core } from "../src/core.ts";
  * plain `Fetcher`, so it is named here as the entrypoint it binds.
  */
 export const core = () => env.CORE as Service<Core>;
+
+/**
+ * The core as a Workers for Platforms dispatch reaches it: `CORE_DEFAULT`, a service binding to
+ * this Worker's default export. Dispatch can't name an entrypoint, so this is the only way in.
+ */
+export const coreByDefault = () => env.CORE_DEFAULT as Service<Core>;

@@ -17,6 +17,8 @@ export default defineConfig({
 			CF_VERSION_METADATA: bindings.versionMetadata(),
 			// The core as an edge reaches it: a service binding to its own entrypoint.
 			CORE: bindings.worker({ worker: name, exportName: "Core" }),
+			// The core as dispatch reaches it: its default export, which takes no entrypoint.
+			CORE_DEFAULT: bindings.worker({ worker: name }),
 		},
 		exports: { Space: exports.durableObject({ storage: "sqlite" }) },
 	},
