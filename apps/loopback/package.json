@@ -42,6 +42,7 @@
 		"zod": "catalog:"
 	},
 	"devDependencies": {
+		"@cloudflare/config": "catalog:",
 		"@cloudflare/vite-plugin": "catalog:",
 		"@cloudflare/vitest-plugin": "catalog:",
 		"@cloudflare/workers-types": "catalog:",

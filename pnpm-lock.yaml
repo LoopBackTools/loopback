@@ -6,6 +6,9 @@ settings:
 
 catalogs:
   default:
+    '@cloudflare/config':
+      specifier: 0.28.1
+      version: 0.28.1
     '@cloudflare/kumo':
       specifier: 2.15.0
       version: 2.15.0
@@ -250,6 +253,9 @@ importers:
         specifier: 'catalog:'
         version: 4.6.7
     devDependencies:
+      '@cloudflare/config':
+        specifier: 'catalog:'
+        version: 0.28.1
       '@cloudflare/vite-plugin':
         specifier: 'catalog:'
         version: 2.0.0-beta.v.6(@types/node@24.19.2)(vite@8.3.5(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(workerd@1.20261023.1)
