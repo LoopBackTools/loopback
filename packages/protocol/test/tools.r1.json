@@ -1,0 +1,792 @@
+{
+	"revision": 1,
+	"source": "tools/list from the 0.7.1 server (packages/server/src/worker/mcp.ts at 1e5d33e), through an MCP client",
+	"tools": [
+		{
+			"name": "ask_question",
+			"title": "Ask the person a question",
+			"description": "Ask the person you are working for a question. Use it whenever you need a decision, a preference or information only they have, instead of guessing, asking in your reply, or using a built-in question prompt: they answer everything from their Loopback inbox. Offer two to six choices when there are clear ones; they can always answer in their own words, ask you something back, or dismiss it. Their reply can take minutes: where your client supports background tasks this returns at once and the reply reaches you when it comes; otherwise it waits.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"question": {
+						"type": "string",
+						"minLength": 1,
+						"description": "The question, as markdown."
+					},
+					"options": {
+						"description": "Between two and six choices, offered as buttons.",
+						"minItems": 2,
+						"maxItems": 6,
+						"type": "array",
+						"items": {
+							"type": "object",
+							"properties": {
+								"label": {
+									"type": "string",
+									"minLength": 1,
+									"maxLength": 80
+								},
+								"description": {
+									"type": "string"
+								}
+							},
+							"required": ["label"],
+							"additionalProperties": false,
+							"description": "A choice offered with a question."
+						}
+					},
+					"multiple": {
+						"description": "Whether the person may pick more than one choice.",
+						"type": "boolean"
+					},
+					"context": {
+						"description": "Background the person needs to answer, as markdown.",
+						"type": "string"
+					},
+					"project": {
+						"type": "string",
+						"minLength": 1,
+						"description": "The project you are working in: the name of the folder its repository is checked out in, the\nmain checkout's even from a worktree (the folder holding `git rev-parse --git-common-dir`), or\nof the working directory outside one. The person works on many projects at once from one inbox;\nthis is how they know who is asking."
+					}
+				},
+				"required": ["question", "project"],
+				"$schema": "https://json-schema.org/draft/2020-12/schema",
+				"additionalProperties": false,
+				"description": "A question for the person, with optional choices. They may always answer in their own words. All\nof it together may be at most 256 KiB."
+			},
+			"annotations": {
+				"readOnlyHint": false,
+				"destructiveHint": false,
+				"idempotentHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "request_review",
+			"title": "Show the person work for review",
+			"description": "Show the person something you made and wait for their verdict: copy, a plan, code, a diff or a screenshot. Use it when they say \"show me\", \"let me see\" or \"run it by me\", and before you finalise anything they should sign off. Put the work itself in content, not a description of it. They can approve (perhaps with a note), request changes, ask you a question first, or dismiss it. For an image, call create_image_upload first. Returns at once as a background task where your client supports it; otherwise waits for their verdict.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"title": {
+						"type": "string",
+						"minLength": 1,
+						"maxLength": 200
+					},
+					"content": {
+						"minItems": 1,
+						"type": "array",
+						"items": {
+							"anyOf": [
+								{
+									"type": "object",
+									"properties": {
+										"type": {
+											"type": "string",
+											"const": "markdown"
+										},
+										"text": {
+											"type": "string",
+											"minLength": 1
+										}
+									},
+									"required": ["type", "text"],
+									"additionalProperties": false,
+									"description": "Prose, copy or a plan, as GitHub-flavoured markdown."
+								},
+								{
+									"type": "object",
+									"properties": {
+										"type": {
+											"type": "string",
+											"const": "code"
+										},
+										"code": {
+											"type": "string",
+											"minLength": 1
+										},
+										"language": {
+											"description": "A language name the highlighter knows, such as `ts` or `python`.",
+											"type": "string"
+										},
+										"filename": {
+											"type": "string"
+										}
+									},
+									"required": ["type", "code"],
+									"additionalProperties": false,
+									"description": "Source code, shown highlighted."
+								},
+								{
+									"type": "object",
+									"properties": {
+										"type": {
+											"type": "string",
+											"const": "diff"
+										},
+										"diff": {
+											"type": "string",
+											"minLength": 1
+										},
+										"filename": {
+											"type": "string"
+										}
+									},
+									"required": ["type", "diff"],
+									"additionalProperties": false,
+									"description": "A unified diff, as `git diff` prints it."
+								},
+								{
+									"type": "object",
+									"properties": {
+										"type": {
+											"type": "string",
+											"const": "image"
+										},
+										"uploadId": {
+											"type": "string",
+											"minLength": 1
+										},
+										"caption": {
+											"type": "string"
+										}
+									},
+									"required": ["type", "uploadId"],
+									"additionalProperties": false,
+									"description": "An image uploaded beforehand through an upload ticket."
+								}
+							],
+							"description": "One piece of what is shown to the person."
+						},
+						"description": "What is being reviewed, in order."
+					},
+					"summary": {
+						"description": "What changed, or what to look at.",
+						"type": "string"
+					},
+					"revises": {
+						"description": "The id of the review this one revises, after changes were requested.",
+						"type": "string"
+					},
+					"project": {
+						"type": "string",
+						"minLength": 1,
+						"description": "The project you are working in: the name of the folder its repository is checked out in, the\nmain checkout's even from a worktree (the folder holding `git rev-parse --git-common-dir`), or\nof the working directory outside one. The person works on many projects at once from one inbox;\nthis is how they know who is asking."
+					}
+				},
+				"required": ["title", "content", "project"],
+				"$schema": "https://json-schema.org/draft/2020-12/schema",
+				"additionalProperties": false,
+				"description": "Work put in front of the person for approval or feedback. All of it together may be at most\n256 KiB: show the part that matters, or split it into several reviews."
+			},
+			"annotations": {
+				"readOnlyHint": false,
+				"destructiveHint": false,
+				"idempotentHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "answer_follow_up",
+			"title": "Answer the person's question",
+			"description": "Answer a question the person asked back about one of your asks (a reply whose outcome is follow_up), then get their decision the same way the ask itself brings it. Include content when the answer involves something new to look at.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"askId": {
+						"type": "string",
+						"minLength": 1
+					},
+					"answer": {
+						"type": "string",
+						"minLength": 1,
+						"description": "The answer, as markdown."
+					},
+					"content": {
+						"description": "Anything new to look at alongside the answer.",
+						"type": "array",
+						"items": {
+							"anyOf": [
+								{
+									"type": "object",
+									"properties": {
+										"type": {
+											"type": "string",
+											"const": "markdown"
+										},
+										"text": {
+											"type": "string",
+											"minLength": 1
+										}
+									},
+									"required": ["type", "text"],
+									"additionalProperties": false,
+									"description": "Prose, copy or a plan, as GitHub-flavoured markdown."
+								},
+								{
+									"type": "object",
+									"properties": {
+										"type": {
+											"type": "string",
+											"const": "code"
+										},
+										"code": {
+											"type": "string",
+											"minLength": 1
+										},
+										"language": {
+											"description": "A language name the highlighter knows, such as `ts` or `python`.",
+											"type": "string"
+										},
+										"filename": {
+											"type": "string"
+										}
+									},
+									"required": ["type", "code"],
+									"additionalProperties": false,
+									"description": "Source code, shown highlighted."
+								},
+								{
+									"type": "object",
+									"properties": {
+										"type": {
+											"type": "string",
+											"const": "diff"
+										},
+										"diff": {
+											"type": "string",
+											"minLength": 1
+										},
+										"filename": {
+											"type": "string"
+										}
+									},
+									"required": ["type", "diff"],
+									"additionalProperties": false,
+									"description": "A unified diff, as `git diff` prints it."
+								},
+								{
+									"type": "object",
+									"properties": {
+										"type": {
+											"type": "string",
+											"const": "image"
+										},
+										"uploadId": {
+											"type": "string",
+											"minLength": 1
+										},
+										"caption": {
+											"type": "string"
+										}
+									},
+									"required": ["type", "uploadId"],
+									"additionalProperties": false,
+									"description": "An image uploaded beforehand through an upload ticket."
+								}
+							],
+							"description": "One piece of what is shown to the person."
+						}
+					}
+				},
+				"required": ["askId", "answer"],
+				"$schema": "https://json-schema.org/draft/2020-12/schema",
+				"additionalProperties": false,
+				"description": "The agent's answer to a question the person asked back, with its content at most 256 KiB."
+			},
+			"annotations": {
+				"readOnlyHint": false,
+				"destructiveHint": false,
+				"idempotentHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "send_briefing",
+			"title": "Brief the person, point by point",
+			"description": "Explain something that breaks into several points (findings, options, steps, a list of changes) so the person can reply on each point on its own: ask about one, push back on another, resolve the rest. Use it when they ask you to explain or walk them through something, instead of writing the list in your reply. Give each point a one-line title, which they see folded, and its detail beneath. Points are numbered for you, 1, 2, 3 and on, straight through every section, and their replies come back keyed to those numbers: answer them with answer_briefing. Returns at once as a background task where your client supports it; otherwise waits for their replies.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"title": {
+						"type": "string",
+						"minLength": 1,
+						"maxLength": 200
+					},
+					"summary": {
+						"description": "What this explains, and why, as markdown.",
+						"type": "string"
+					},
+					"sections": {
+						"minItems": 1,
+						"type": "array",
+						"items": {
+							"type": "object",
+							"properties": {
+								"title": {
+									"type": "string"
+								},
+								"points": {
+									"minItems": 1,
+									"type": "array",
+									"items": {
+										"type": "object",
+										"properties": {
+											"title": {
+												"type": "string",
+												"minLength": 1,
+												"maxLength": 200,
+												"description": "The point in one line, shown while it is folded."
+											},
+											"detail": {
+												"description": "The point explained, as markdown, shown when the person opens it.",
+												"type": "string"
+											},
+											"content": {
+												"description": "Anything to look at with it: code, a diff or an image.",
+												"type": "array",
+												"items": {
+													"anyOf": [
+														{
+															"type": "object",
+															"properties": {
+																"type": {
+																	"type": "string",
+																	"const": "markdown"
+																},
+																"text": {
+																	"type": "string",
+																	"minLength": 1
+																}
+															},
+															"required": ["type", "text"],
+															"additionalProperties": false,
+															"description": "Prose, copy or a plan, as GitHub-flavoured markdown."
+														},
+														{
+															"type": "object",
+															"properties": {
+																"type": {
+																	"type": "string",
+																	"const": "code"
+																},
+																"code": {
+																	"type": "string",
+																	"minLength": 1
+																},
+																"language": {
+																	"description": "A language name the highlighter knows, such as `ts` or `python`.",
+																	"type": "string"
+																},
+																"filename": {
+																	"type": "string"
+																}
+															},
+															"required": ["type", "code"],
+															"additionalProperties": false,
+															"description": "Source code, shown highlighted."
+														},
+														{
+															"type": "object",
+															"properties": {
+																"type": {
+																	"type": "string",
+																	"const": "diff"
+																},
+																"diff": {
+																	"type": "string",
+																	"minLength": 1
+																},
+																"filename": {
+																	"type": "string"
+																}
+															},
+															"required": ["type", "diff"],
+															"additionalProperties": false,
+															"description": "A unified diff, as `git diff` prints it."
+														},
+														{
+															"type": "object",
+															"properties": {
+																"type": {
+																	"type": "string",
+																	"const": "image"
+																},
+																"uploadId": {
+																	"type": "string",
+																	"minLength": 1
+																},
+																"caption": {
+																	"type": "string"
+																}
+															},
+															"required": ["type", "uploadId"],
+															"additionalProperties": false,
+															"description": "An image uploaded beforehand through an upload ticket."
+														}
+													],
+													"description": "One piece of what is shown to the person."
+												}
+											}
+										},
+										"required": ["title"],
+										"additionalProperties": false,
+										"description": "One point of a briefing: a line the person sees folded, and what opens beneath it."
+									}
+								}
+							},
+							"required": ["points"],
+							"additionalProperties": false,
+							"description": "A list of points under an optional heading."
+						},
+						"description": "The points, in lists under optional headings."
+					},
+					"project": {
+						"type": "string",
+						"minLength": 1,
+						"description": "The project you are working in: the name of the folder its repository is checked out in, the\nmain checkout's even from a worktree (the folder holding `git rev-parse --git-common-dir`), or\nof the working directory outside one. The person works on many projects at once from one inbox;\nthis is how they know who is asking."
+					}
+				},
+				"required": ["title", "sections", "project"],
+				"$schema": "https://json-schema.org/draft/2020-12/schema",
+				"additionalProperties": false,
+				"description": "Something explained as points the person can reply on one at a time: findings, options, steps, a\nlist of changes. They may write on any point, or mark it resolved, and you answer on each point\nthey wrote on until every point is resolved. Points are numbered for you, straight through every\nsection: at most fifty. All of it together may be at most 256 KiB."
+			},
+			"annotations": {
+				"readOnlyHint": false,
+				"destructiveHint": false,
+				"idempotentHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "answer_briefing",
+			"title": "Answer the person, point by point",
+			"description": "Answer the person's replies on a briefing: one answer for every point they wrote on without resolving it, and for any other open point you have more to say on. When a point needs drilling into, break it into sub-points, numbered beneath it (3.1, 3.2), which they can reply on in turn. Then get their next replies the same way the briefing brought these. The briefing closes once they resolve every point.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"askId": {
+						"type": "string",
+						"minLength": 1
+					},
+					"answers": {
+						"minItems": 1,
+						"type": "array",
+						"items": {
+							"type": "object",
+							"properties": {
+								"point": {
+									"type": "string",
+									"minLength": 1,
+									"description": "The point's id, such as `3` or `3.1`."
+								},
+								"answer": {
+									"type": "string",
+									"minLength": 1,
+									"description": "The answer, as markdown."
+								},
+								"content": {
+									"description": "Anything new to look at alongside the answer.",
+									"type": "array",
+									"items": {
+										"anyOf": [
+											{
+												"type": "object",
+												"properties": {
+													"type": {
+														"type": "string",
+														"const": "markdown"
+													},
+													"text": {
+														"type": "string",
+														"minLength": 1
+													}
+												},
+												"required": ["type", "text"],
+												"additionalProperties": false,
+												"description": "Prose, copy or a plan, as GitHub-flavoured markdown."
+											},
+											{
+												"type": "object",
+												"properties": {
+													"type": {
+														"type": "string",
+														"const": "code"
+													},
+													"code": {
+														"type": "string",
+														"minLength": 1
+													},
+													"language": {
+														"description": "A language name the highlighter knows, such as `ts` or `python`.",
+														"type": "string"
+													},
+													"filename": {
+														"type": "string"
+													}
+												},
+												"required": ["type", "code"],
+												"additionalProperties": false,
+												"description": "Source code, shown highlighted."
+											},
+											{
+												"type": "object",
+												"properties": {
+													"type": {
+														"type": "string",
+														"const": "diff"
+													},
+													"diff": {
+														"type": "string",
+														"minLength": 1
+													},
+													"filename": {
+														"type": "string"
+													}
+												},
+												"required": ["type", "diff"],
+												"additionalProperties": false,
+												"description": "A unified diff, as `git diff` prints it."
+											},
+											{
+												"type": "object",
+												"properties": {
+													"type": {
+														"type": "string",
+														"const": "image"
+													},
+													"uploadId": {
+														"type": "string",
+														"minLength": 1
+													},
+													"caption": {
+														"type": "string"
+													}
+												},
+												"required": ["type", "uploadId"],
+												"additionalProperties": false,
+												"description": "An image uploaded beforehand through an upload ticket."
+											}
+										],
+										"description": "One piece of what is shown to the person."
+									}
+								},
+								"points": {
+									"description": "Sub-points this point breaks into, numbered beneath it (`3.1`, `3.2`, …), each of which the\nperson can reply on in turn. Points go at most three levels deep.",
+									"type": "array",
+									"items": {
+										"type": "object",
+										"properties": {
+											"title": {
+												"type": "string",
+												"minLength": 1,
+												"maxLength": 200,
+												"description": "The point in one line, shown while it is folded."
+											},
+											"detail": {
+												"description": "The point explained, as markdown, shown when the person opens it.",
+												"type": "string"
+											},
+											"content": {
+												"description": "Anything to look at with it: code, a diff or an image.",
+												"type": "array",
+												"items": {
+													"anyOf": [
+														{
+															"type": "object",
+															"properties": {
+																"type": {
+																	"type": "string",
+																	"const": "markdown"
+																},
+																"text": {
+																	"type": "string",
+																	"minLength": 1
+																}
+															},
+															"required": ["type", "text"],
+															"additionalProperties": false,
+															"description": "Prose, copy or a plan, as GitHub-flavoured markdown."
+														},
+														{
+															"type": "object",
+															"properties": {
+																"type": {
+																	"type": "string",
+																	"const": "code"
+																},
+																"code": {
+																	"type": "string",
+																	"minLength": 1
+																},
+																"language": {
+																	"description": "A language name the highlighter knows, such as `ts` or `python`.",
+																	"type": "string"
+																},
+																"filename": {
+																	"type": "string"
+																}
+															},
+															"required": ["type", "code"],
+															"additionalProperties": false,
+															"description": "Source code, shown highlighted."
+														},
+														{
+															"type": "object",
+															"properties": {
+																"type": {
+																	"type": "string",
+																	"const": "diff"
+																},
+																"diff": {
+																	"type": "string",
+																	"minLength": 1
+																},
+																"filename": {
+																	"type": "string"
+																}
+															},
+															"required": ["type", "diff"],
+															"additionalProperties": false,
+															"description": "A unified diff, as `git diff` prints it."
+														},
+														{
+															"type": "object",
+															"properties": {
+																"type": {
+																	"type": "string",
+																	"const": "image"
+																},
+																"uploadId": {
+																	"type": "string",
+																	"minLength": 1
+																},
+																"caption": {
+																	"type": "string"
+																}
+															},
+															"required": ["type", "uploadId"],
+															"additionalProperties": false,
+															"description": "An image uploaded beforehand through an upload ticket."
+														}
+													],
+													"description": "One piece of what is shown to the person."
+												}
+											}
+										},
+										"required": ["title"],
+										"additionalProperties": false,
+										"description": "One point of a briefing: a line the person sees folded, and what opens beneath it."
+									}
+								}
+							},
+							"required": ["point", "answer"],
+							"additionalProperties": false,
+							"description": "Your answer on one point of a briefing."
+						}
+					}
+				},
+				"required": ["askId", "answers"],
+				"$schema": "https://json-schema.org/draft/2020-12/schema",
+				"additionalProperties": false,
+				"description": "Your answers on a briefing, one per point: every point the person wrote on without resolving it,\nand any other open point you have more to say on. All of it together may be at most 256 KiB."
+			},
+			"annotations": {
+				"readOnlyHint": false,
+				"destructiveHint": false,
+				"idempotentHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "open_inbox",
+			"title": "Open the person's inbox",
+			"description": "Get the address of the person's Loopback inbox: the live page where they read and answer everything agents ask, across all their projects. Use it when they ask where their inbox or dashboard is, or to point them at one ask by its askId. Open the address for them with the system's open command if you can; otherwise give it to them.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"askId": {
+						"description": "An ask to open directly. Leave it out for the inbox itself.",
+						"type": "string"
+					}
+				},
+				"$schema": "https://json-schema.org/draft/2020-12/schema",
+				"additionalProperties": false,
+				"description": "A request for the address of the person's inbox."
+			},
+			"outputSchema": {
+				"type": "object",
+				"properties": {
+					"url": {
+						"type": "string"
+					}
+				},
+				"required": ["url"],
+				"$schema": "https://json-schema.org/draft/2020-12/schema",
+				"additionalProperties": false,
+				"description": "Where the person reads and answers everything agents ask."
+			},
+			"annotations": {
+				"readOnlyHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "create_image_upload",
+			"title": "Upload an image for a review",
+			"description": "Get a one-time URL for uploading an image, such as a screenshot, to show in request_review. Run the command it returns with the file's path, then put the uploadId in an image block. The URL expires after fifteen minutes.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"contentType": {
+						"type": "string",
+						"enum": ["image/png", "image/jpeg", "image/webp", "image/gif"],
+						"description": "Image formats an agent may upload for a review."
+					}
+				},
+				"required": ["contentType"],
+				"$schema": "https://json-schema.org/draft/2020-12/schema",
+				"additionalProperties": false,
+				"description": "A request for somewhere to upload an image."
+			},
+			"outputSchema": {
+				"type": "object",
+				"properties": {
+					"uploadId": {
+						"type": "string"
+					},
+					"uploadUrl": {
+						"type": "string",
+						"description": "Send the image here with `PUT` and its `Content-Type`. No credentials needed."
+					},
+					"expiresAt": {
+						"type": "string",
+						"format": "date-time",
+						"pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+					},
+					"maxBytes": {
+						"type": "integer",
+						"minimum": -2147483648,
+						"maximum": 2147483647
+					},
+					"command": {
+						"type": "string",
+						"description": "A ready-to-run command that performs the upload; replace `FILE` with the image's path."
+					}
+				},
+				"required": ["uploadId", "uploadUrl", "expiresAt", "maxBytes", "command"],
+				"$schema": "https://json-schema.org/draft/2020-12/schema",
+				"additionalProperties": false,
+				"description": "Where to upload an image, once, before it expires."
+			},
+			"annotations": {
+				"readOnlyHint": false,
+				"destructiveHint": false,
+				"idempotentHint": false,
+				"openWorldHint": false
+			}
+		}
+	]
+}

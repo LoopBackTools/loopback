@@ -21,8 +21,7 @@
 	},
 	"type": "module",
 	"scripts": {
-		"generate": "pnpm --filter @loopbacktools/protocol generate",
-		"generate:check": "pnpm generate && git diff --exit-code -- packages/protocol/src/generated packages/protocol/openapi packages/server/src/generated",
+		"generate": "pnpm -r generate",
 		"typecheck": "pnpm -r typecheck",
 		"lint": "oxlint --type-aware --deny-warnings --report-unused-disable-directives --ignore-pattern \"**/*.gen.ts\"",
 		"format": "oxfmt",

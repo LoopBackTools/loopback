@@ -29,7 +29,7 @@ to end.
 A pull request has to pass what CI runs:
 
 ```sh
-pnpm generate:check   # the generated API matches its TypeSpec definition
+pnpm generate         # the code generated from the TypeSpec definition, which git does not keep
 pnpm typecheck
 pnpm lint             # oxlint, warnings included
 pnpm format:check     # oxfmt; run `pnpm format` to fix
@@ -43,8 +43,8 @@ local Durable Object and R2 bucket. The SDK's and the inbox's run in Node.
 ## Changing the API
 
 Every shape Loopback speaks is defined once, in `packages/protocol/spec/main.tsp`. To change one,
-edit the definition, run `pnpm generate`, and commit the generated files with your change. Never
-edit a `*.gen.ts` file or an OpenAPI document by hand: `pnpm generate:check` fails when they drift.
+edit the definition and run `pnpm generate`. What it generates (the `*.gen.ts` files and the OpenAPI
+documents) is not committed: run `pnpm generate` after cloning, and after every change to the spec.
 
 A change to a message's shape is a new revision of the contract. Parts of a deployment run
 different code for a while after every deploy, so each names the revision it writes, and newer code

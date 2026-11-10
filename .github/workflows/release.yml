@@ -32,7 +32,7 @@ jobs:
             version=$(node -p "require('./$manifest').version")
             [ "v$version" = "$GITHUB_REF_NAME" ] || { echo "$manifest is $version, not $GITHUB_REF_NAME"; exit 1; }
           done
-      - run: pnpm generate:check
+      - run: pnpm generate
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm format:check

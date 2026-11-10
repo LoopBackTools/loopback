@@ -1,0 +1,19 @@
+{
+	"AgentReply": [
+		{
+			"askId": "ask_q1",
+			"reply": { "outcome": "answered", "selected": ["D1"], "text": "Keep it simple." },
+			"message": "The person answered. They chose: \"D1\". They wrote: Keep it simple."
+		},
+		{
+			"askId": "ask_r1",
+			"reply": { "outcome": "follow_up", "question": "Does this cover the mobile layout?" },
+			"message": "The person asked a question before deciding: Does this cover the mobile layout?\n\nAnswer it with answer_follow_up (askId: \"ask_r1\"). This ask stays open, and that call returns their decision."
+		},
+		{
+			"askId": "ask_q2",
+			"reply": null,
+			"message": "No reply yet. Call ask_question again with the same arguments to keep waiting; it rejoins this ask."
+		}
+	]
+}

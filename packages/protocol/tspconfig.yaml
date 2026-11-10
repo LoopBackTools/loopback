@@ -1,17 +1,15 @@
-linter:
-  extends:
-    - "typespec-hono/recommended"
 emit:
-  - typespec-hono
+  - typespec-http-zod
   - "@typespec/openapi3"
   - typespec-openapi-document
 options:
-  typespec-hono:
-    # The server, its validators and runtime live with the server; the framework-free contract
-    # types live here, where clients import them.
-    emitter-output-dir: "{project-root}/../server/src/generated"
+  typespec-http-zod:
+    # The contract's framework-free types, which clients and the core import, go in src/generated.
+    # The library writes its zod validators too, whatever it is asked: nothing here publishes or
+    # imports them, so they go in the package's cache. Each edge compiles this spec with its own
+    # server and tool emitters, and generates the validators it serves with.
+    emitter-output-dir: "{project-root}/node_modules/.cache/typespec-http-zod"
     contracts-output-dir: "{project-root}/src/generated"
-    contracts-package: "@loopbacktools/protocol"
     seal-object-schemas: true
     regenerate-hint: "pnpm generate"
   "@typespec/openapi3":

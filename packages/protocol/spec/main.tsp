@@ -4,6 +4,7 @@ import "@typespec/versioning";
 
 using Http;
 using Versioning;
+using OpenAPI;
 
 // The Loopback contract. Everything the HTTP API accepts or returns, the shapes MCP tools take and
 // give back, and the frames the event socket sends are declared here, and only here.
@@ -33,6 +34,9 @@ namespace Loopback;
  */
 enum Revisions {
 	r1: "1",
+
+	/** Declares what an agent does, from which every edge generates its MCP tools. */
+	r2: "2",
 }
 
 // --- vocabulary -----------------------------------------------------------------------------------
@@ -478,6 +482,24 @@ model ToolReply {
 	reply: Reply;
 }
 
+/**
+ * What a call that waits for the person answers: their reply and what it means for you, or, once the
+ * call has waited as long as it may, that no reply has come yet.
+ */
+@added(Revisions.r2)
+model AgentReply {
+	askId: string;
+
+	/** The reply that ended the wait, or `null` when the call stopped waiting first. */
+	reply: Reply | null;
+
+	/**
+	 * What it means for you, in words: what the person said and what to do next, or how to keep
+	 * waiting.
+	 */
+	message: string;
+}
+
 /** Open asks, newest first, and the most recently closed. */
 model Snapshot {
 	open: Ask[];
@@ -660,4 +682,77 @@ interface Uploads {
 		@statusCode statusCode: 201;
 		@body body: UploadReceipt;
 	} | NotFound | Gone | TooLarge | Unprocessable;
+}
+
+/**
+ * What an agent does: put something in front of the person and wait for their reply, answer what
+ * they asked back, upload an image to show them, and find their inbox. Each operation is also an MCP
+ * tool, named by its operation id, with its summary as the title and its description word for word.
+ *
+ * A call that waits answers with the reply once the person gives it. One that has waited as long as
+ * it may answers with no reply yet, and calling it again with the same arguments rejoins the same ask.
+ */
+@added(Revisions.r2)
+@tag("Agent")
+@route("/agent")
+@useAuth(BearerAuth)
+interface Agent {
+	@summary("Ask the person a question")
+	@doc("Ask the person you are working for a question. Use it whenever you need a decision, a preference or information only they have, instead of guessing, asking in your reply, or using a built-in question prompt: they answer everything from their Loopback inbox. Offer two to six choices when there are clear ones; they can always answer in their own words, ask you something back, or dismiss it. Their reply can take minutes: where your client supports background tasks this returns at once and the reply reaches you when it comes; otherwise it waits.")
+	@operationId("ask_question")
+	@route("/questions")
+	@put
+	askQuestion(@body question: QuestionInput): AgentReply | Unprocessable | Unauthorized;
+
+	@summary("Show the person work for review")
+	@doc("Show the person something you made and wait for their verdict: copy, a plan, code, a diff or a screenshot. Use it when they say \"show me\", \"let me see\" or \"run it by me\", and before you finalise anything they should sign off. Put the work itself in content, not a description of it. They can approve (perhaps with a note), request changes, ask you a question first, or dismiss it. For an image, call create_image_upload first. Returns at once as a background task where your client supports it; otherwise waits for their verdict.")
+	@operationId("request_review")
+	@route("/reviews")
+	@put
+	requestReview(@body review: ReviewInput): AgentReply | Unprocessable | Unauthorized;
+
+	@summary("Answer the person's question")
+	@doc("Answer a question the person asked back about one of your asks (a reply whose outcome is follow_up), then get their decision the same way the ask itself brings it. Include content when the answer involves something new to look at.")
+	@operationId("answer_follow_up")
+	@route("/follow-ups")
+	@put
+	answerFollowUp(
+		@body answer: FollowUpInput,
+	): AgentReply | NotFound | Conflict | Unprocessable | Unauthorized;
+
+	@summary("Brief the person, point by point")
+	@doc("Explain something that breaks into several points (findings, options, steps, a list of changes) so the person can reply on each point on its own: ask about one, push back on another, resolve the rest. Use it when they ask you to explain or walk them through something, instead of writing the list in your reply. Give each point a one-line title, which they see folded, and its detail beneath. Points are numbered for you, 1, 2, 3 and on, straight through every section, and their replies come back keyed to those numbers: answer them with answer_briefing. Returns at once as a background task where your client supports it; otherwise waits for their replies.")
+	@operationId("send_briefing")
+	@route("/briefings")
+	@put
+	sendBriefing(@body briefing: BriefingInput): AgentReply | Unprocessable | Unauthorized;
+
+	@summary("Answer the person, point by point")
+	@doc("Answer the person's replies on a briefing: one answer for every point they wrote on without resolving it, and for any other open point you have more to say on. When a point needs drilling into, break it into sub-points, numbered beneath it (3.1, 3.2), which they can reply on in turn. Then get their next replies the same way the briefing brought these. The briefing closes once they resolve every point.")
+	@operationId("answer_briefing")
+	@route("/briefing-answers")
+	@put
+	answerBriefing(
+		@body answers: BriefingAnswerInput,
+	): AgentReply | NotFound | Conflict | Unprocessable | Unauthorized;
+
+	@summary("Open the person's inbox")
+	@doc("Get the address of the person's Loopback inbox: the live page where they read and answer everything agents ask, across all their projects. Use it when they ask where their inbox or dashboard is, or to point them at one ask by its askId. Open the address for them with the system's open command if you can; otherwise give it to them.")
+	@operationId("open_inbox")
+	@route("/inbox")
+	@get
+	openInbox(
+		/** An ask to open directly. Leave it out for the inbox itself. */
+		@query askId?: string,
+	): InboxLink | Unauthorized;
+
+	@summary("Upload an image for a review")
+	@doc("Get a one-time URL for uploading an image, such as a screenshot, to show in request_review. Run the command it returns with the file's path, then put the uploadId in an image block. The URL expires after fifteen minutes.")
+	@operationId("create_image_upload")
+	@route("/uploads")
+	@post
+	createImageUpload(@body request: UploadRequest): {
+		@statusCode statusCode: 201;
+		@body body: UploadTicket;
+	} | Unauthorized;
 }

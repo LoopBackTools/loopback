@@ -19,7 +19,7 @@
 		".": "./src/index.ts",
 		"./document": "./src/generated/document.gen.ts",
 		"./schema": "./src/schema.ts",
-		"./openapi.json": "./openapi/openapi.1.json"
+		"./openapi.json": "./openapi/openapi.2.json"
 	},
 	"publishConfig": {
 		"exports": {
@@ -35,7 +35,7 @@
 				"types": "./dist/src/schema.d.ts",
 				"default": "./dist/src/schema.js"
 			},
-			"./openapi.json": "./openapi/openapi.1.json"
+			"./openapi.json": "./openapi/openapi.2.json"
 		},
 		"access": "public"
 	},
@@ -48,7 +48,8 @@
 	},
 	"devDependencies": {
 		"@effect/openapi-generator": "catalog:",
-		"@hono/zod-validator": "catalog:",
+		"@modelcontextprotocol/client": "catalog:",
+		"@modelcontextprotocol/server": "catalog:",
 		"@types/node": "catalog:",
 		"@typespec/compiler": "catalog:",
 		"@typespec/http": "catalog:",
@@ -56,10 +57,9 @@
 		"@typespec/openapi3": "catalog:",
 		"@typespec/streams": "catalog:",
 		"@typespec/versioning": "catalog:",
-		"hono": "catalog:",
-		"secure-json-parse": "catalog:",
 		"typescript": "catalog:",
-		"typespec-hono": "catalog:",
+		"typespec-http-mcp": "catalog:",
+		"typespec-http-zod": "catalog:",
 		"typespec-openapi-document": "catalog:",
 		"vitest": "catalog:",
 		"zod": "catalog:"

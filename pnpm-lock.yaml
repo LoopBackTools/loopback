@@ -138,9 +138,12 @@ catalogs:
     typescript:
       specifier: 7.0.2
       version: 7.0.2
-    typespec-hono:
-      specifier: 0.31.1
-      version: 0.31.1
+    typespec-http-mcp:
+      specifier: 0.8.1
+      version: 0.8.1
+    typespec-http-zod:
+      specifier: 0.34.1
+      version: 0.34.1
     typespec-openapi-document:
       specifier: 0.6.1
       version: 0.6.1
@@ -437,9 +440,12 @@ importers:
       '@effect/openapi-generator':
         specifier: 'catalog:'
         version: 4.0.6(@effect/platform-node@4.0.6(effect@4.0.6)(redis@6.3.1))(effect@4.0.6)
-      '@hono/zod-validator':
+      '@modelcontextprotocol/client':
         specifier: 'catalog:'
-        version: 0.9.1(hono@4.13.14)(zod@4.6.7)
+        version: 2.4.0
+      '@modelcontextprotocol/server':
+        specifier: 'catalog:'
+        version: 2.4.0
       '@types/node':
         specifier: 'catalog:'
         version: 24.19.2
@@ -461,18 +467,15 @@ importers:
       '@typespec/versioning':
         specifier: 'catalog:'
         version: 0.87.0(@typespec/compiler@1.17.0(@types/node@24.19.2))
-      hono:
-        specifier: 'catalog:'
-        version: 4.13.14
-      secure-json-parse:
-        specifier: 'catalog:'
-        version: 4.1.1
       typescript:
         specifier: 'catalog:'
         version: 7.0.2
-      typespec-hono:
+      typespec-http-mcp:
         specifier: 'catalog:'
-        version: 0.31.1(@hono/zod-validator@0.9.1(hono@4.13.14)(zod@4.6.7))(@typespec/compiler@1.17.0(@types/node@24.19.2))(@typespec/http@1.17.0(@typespec/compiler@1.17.0(@types/node@24.19.2))(@typespec/streams@0.87.0(@typespec/compiler@1.17.0(@types/node@24.19.2))))(@typespec/openapi@1.17.0(@typespec/compiler@1.17.0(@types/node@24.19.2))(@typespec/http@1.17.0(@typespec/compiler@1.17.0(@types/node@24.19.2))(@typespec/streams@0.87.0(@typespec/compiler@1.17.0(@types/node@24.19.2)))))(@typespec/streams@0.87.0(@typespec/compiler@1.17.0(@types/node@24.19.2)))(@typespec/versioning@0.87.0(@typespec/compiler@1.17.0(@types/node@24.19.2)))(hono@4.13.14)(secure-json-parse@4.1.1)(zod@4.6.7)
+        version: 0.8.1(@modelcontextprotocol/server@2.4.0)(@typespec/compiler@1.17.0(@types/node@24.19.2))(@typespec/http@1.17.0(@typespec/compiler@1.17.0(@types/node@24.19.2))(@typespec/streams@0.87.0(@typespec/compiler@1.17.0(@types/node@24.19.2))))(@typespec/openapi@1.17.0(@typespec/compiler@1.17.0(@types/node@24.19.2))(@typespec/http@1.17.0(@typespec/compiler@1.17.0(@types/node@24.19.2))(@typespec/streams@0.87.0(@typespec/compiler@1.17.0(@types/node@24.19.2)))))(@typespec/streams@0.87.0(@typespec/compiler@1.17.0(@types/node@24.19.2)))(@typespec/versioning@0.87.0(@typespec/compiler@1.17.0(@types/node@24.19.2)))(zod@4.6.7)
+      typespec-http-zod:
+        specifier: 'catalog:'
+        version: 0.34.1(@typespec/compiler@1.17.0(@types/node@24.19.2))(@typespec/http@1.17.0(@typespec/compiler@1.17.0(@types/node@24.19.2))(@typespec/streams@0.87.0(@typespec/compiler@1.17.0(@types/node@24.19.2))))(@typespec/openapi@1.17.0(@typespec/compiler@1.17.0(@types/node@24.19.2))(@typespec/http@1.17.0(@typespec/compiler@1.17.0(@types/node@24.19.2))(@typespec/streams@0.87.0(@typespec/compiler@1.17.0(@types/node@24.19.2)))))(@typespec/streams@0.87.0(@typespec/compiler@1.17.0(@types/node@24.19.2)))(@typespec/versioning@0.87.0(@typespec/compiler@1.17.0(@types/node@24.19.2)))(zod@4.6.7)
       typespec-openapi-document:
         specifier: 'catalog:'
         version: 0.6.1(@typespec/compiler@1.17.0(@types/node@24.19.2))(@typespec/openapi3@1.17.0(@typespec/compiler@1.17.0(@types/node@24.19.2))(@typespec/http@1.17.0(@typespec/compiler@1.17.0(@types/node@24.19.2))(@typespec/streams@0.87.0(@typespec/compiler@1.17.0(@types/node@24.19.2))))(@typespec/openapi@1.17.0(@typespec/compiler@1.17.0(@types/node@24.19.2))(@typespec/http@1.17.0(@typespec/compiler@1.17.0(@types/node@24.19.2))(@typespec/streams@0.87.0(@typespec/compiler@1.17.0(@types/node@24.19.2)))))(@typespec/streams@0.87.0(@typespec/compiler@1.17.0(@types/node@24.19.2)))(@typespec/versioning@0.87.0(@typespec/compiler@1.17.0(@types/node@24.19.2))))(@typespec/versioning@0.87.0(@typespec/compiler@1.17.0(@types/node@24.19.2)))
@@ -3576,16 +3579,14 @@ packages:
     engines: {node: '>=16.20.0'}
     hasBin: true
 
-  typespec-hono@0.31.1:
-    resolution: {integrity: sha512-JGVkWmgOWnOpIriGnFQqkTHe4qSkH6HTzdVUt+mCGBQPzHwYnrwFlFw5cUETJ5kFaLqzfD//DT6bHlwQMJKClQ==}
+  typespec-http-mcp@0.8.1:
+    resolution: {integrity: sha512-JTS7VW972+cKQf2VD0d8AQxg8E84hAYZbEg6BFdCnBMf76jlBCpgFkLAcZhJpkMDiN/R983rp6H4G4QyOpapYg==}
     engines: {node: '>=22.0.0'}
     peerDependencies:
-      '@hono/zod-validator': ^0.8.0 || ^0.9.0
+      '@modelcontextprotocol/server': ^2.0.0
       '@typespec/compiler': ^1.15.0
       '@typespec/http': ^1.15.0
       '@typespec/openapi': ^1.15.0
-      hono: ^4.13.5
-      secure-json-parse: ^4.1.1
       zod: ^4.5.0
 
   typespec-http-zod@0.34.1:
@@ -6784,14 +6785,12 @@ snapshots:
       '@typescript/typescript-win32-arm64': 7.0.2
       '@typescript/typescript-win32-x64': 7.0.2
 
-  typespec-hono@0.31.1(@hono/zod-validator@0.9.1(hono@4.13.14)(zod@4.6.7))(@typespec/compiler@1.17.0(@types/node@24.19.2))(@typespec/http@1.17.0(@typespec/compiler@1.17.0(@types/node@24.19.2))(@typespec/streams@0.87.0(@typespec/compiler@1.17.0(@types/node@24.19.2))))(@typespec/openapi@1.17.0(@typespec/compiler@1.17.0(@types/node@24.19.2))(@typespec/http@1.17.0(@typespec/compiler@1.17.0(@types/node@24.19.2))(@typespec/streams@0.87.0(@typespec/compiler@1.17.0(@types/node@24.19.2)))))(@typespec/streams@0.87.0(@typespec/compiler@1.17.0(@types/node@24.19.2)))(@typespec/versioning@0.87.0(@typespec/compiler@1.17.0(@types/node@24.19.2)))(hono@4.13.14)(secure-json-parse@4.1.1)(zod@4.6.7):
+  typespec-http-mcp@0.8.1(@modelcontextprotocol/server@2.4.0)(@typespec/compiler@1.17.0(@types/node@24.19.2))(@typespec/http@1.17.0(@typespec/compiler@1.17.0(@types/node@24.19.2))(@typespec/streams@0.87.0(@typespec/compiler@1.17.0(@types/node@24.19.2))))(@typespec/openapi@1.17.0(@typespec/compiler@1.17.0(@types/node@24.19.2))(@typespec/http@1.17.0(@typespec/compiler@1.17.0(@types/node@24.19.2))(@typespec/streams@0.87.0(@typespec/compiler@1.17.0(@types/node@24.19.2)))))(@typespec/streams@0.87.0(@typespec/compiler@1.17.0(@types/node@24.19.2)))(@typespec/versioning@0.87.0(@typespec/compiler@1.17.0(@types/node@24.19.2)))(zod@4.6.7):
     dependencies:
-      '@hono/zod-validator': 0.9.1(hono@4.13.14)(zod@4.6.7)
+      '@modelcontextprotocol/server': 2.4.0
       '@typespec/compiler': 1.17.0(@types/node@24.19.2)
       '@typespec/http': 1.17.0(@typespec/compiler@1.17.0(@types/node@24.19.2))(@typespec/streams@0.87.0(@typespec/compiler@1.17.0(@types/node@24.19.2)))
       '@typespec/openapi': 1.17.0(@typespec/compiler@1.17.0(@types/node@24.19.2))(@typespec/http@1.17.0(@typespec/compiler@1.17.0(@types/node@24.19.2))(@typespec/streams@0.87.0(@typespec/compiler@1.17.0(@types/node@24.19.2))))
-      hono: 4.13.14
-      secure-json-parse: 4.1.1
       typespec-http-zod: 0.34.1(@typespec/compiler@1.17.0(@types/node@24.19.2))(@typespec/http@1.17.0(@typespec/compiler@1.17.0(@types/node@24.19.2))(@typespec/streams@0.87.0(@typespec/compiler@1.17.0(@types/node@24.19.2))))(@typespec/openapi@1.17.0(@typespec/compiler@1.17.0(@types/node@24.19.2))(@typespec/http@1.17.0(@typespec/compiler@1.17.0(@types/node@24.19.2))(@typespec/streams@0.87.0(@typespec/compiler@1.17.0(@types/node@24.19.2)))))(@typespec/streams@0.87.0(@typespec/compiler@1.17.0(@types/node@24.19.2)))(@typespec/versioning@0.87.0(@typespec/compiler@1.17.0(@types/node@24.19.2)))(zod@4.6.7)
       zod: 4.6.7
     transitivePeerDependencies:

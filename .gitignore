@@ -8,6 +8,10 @@ coverage/
 .env.*
 !.env.example
 .cloudflare/
+# generated from the TypeSpec contract by `pnpm generate`; `revisions/` keeps each revision frozen
+**/src/generated/
+packages/protocol/openapi/
+
 # the packages' published build
 packages/*/dist/
 *.tsbuildinfo
@@ -19,3 +23,6 @@ packages/*/dist/
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# a test compiles the contract's tools here, inside the package so they resolve its dependencies
+packages/protocol/test/.tools-*/
