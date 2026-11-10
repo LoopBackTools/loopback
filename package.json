@@ -28,8 +28,8 @@
 		"format:check": "oxfmt --check",
 		"test": "vitest run scripts && pnpm -r test",
 		"build": "pnpm -r build",
-		"dev": "pnpm --filter loopback dev",
-		"deploy": "pnpm --filter loopback run deploy"
+		"dev": "pnpm --filter ./apps/loopback dev",
+		"deploy": "node scripts/deploy.ts"
 	},
 	"devDependencies": {
 		"@types/node": "catalog:",

@@ -1,0 +1,27 @@
+{
+	"name": "loopback-core",
+	"version": "0.7.1",
+	"private": true,
+	"description": "The deployable Loopback core: @loopbacktools/core as it is, holding every space and its images, with no public address.",
+	"homepage": "https://github.com/LoopBackTools/loopback/tree/main/apps/loopback-core#readme",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/LoopBackTools/loopback.git",
+		"directory": "apps/loopback-core"
+	},
+	"type": "module",
+	"scripts": {
+		"deploy": "cf deploy",
+		"types": "cf workers types",
+		"typecheck": "pnpm types && tsc --noEmit"
+	},
+	"dependencies": {
+		"@loopbacktools/core": "workspace:*"
+	},
+	"devDependencies": {
+		"@types/node": "catalog:",
+		"cf": "catalog:",
+		"typescript": "catalog:"
+	}
+}

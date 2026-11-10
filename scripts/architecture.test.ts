@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 /**
  * Every dependency in the workspace points inward, towards the contract:
  *
- *     protocol  ←  core  ←  (apps/core)
+ *     protocol  ←  core  ←  apps/loopback-core
  *        ↑   ↖______________  apps/loopback's edge (the core's RPC module only)
  *       sdk  ←  inbox  ←  app  ←  apps/loopback's web inbox
  *
@@ -34,6 +34,7 @@ const ALLOWED: Readonly<Record<string, readonly string[]>> = {
 		"@loopbacktools/protocol",
 	],
 	"apps/loopback/src/generated": ["@loopbacktools/protocol"],
+	"apps/loopback-core/src": ["@loopbacktools/core"],
 };
 
 /** Where each part's relative imports may lead: inside its own package. */

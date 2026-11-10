@@ -1,9 +1,9 @@
-import { bindings, defineConfig } from "cf/config";
+import { bindings, defineConfig, exports } from "cf/config";
 import * as entrypoint from "./src/worker.ts" with { type: "cf-worker" };
 import { planFrom, planNotice } from "./plan.ts";
 
 /**
- * `--mode cpu-check` deploys a separate copy, `loopback-cpu-check`, held to Workers Free's 10 ms of
+ * `--mode cpu-check` deploys a separate copy, `<name>-cpu-check`, held to Workers Free's 10 ms of
  * CPU per request, to check a change fits the free plan before it ships (scripts/cpu-check.ts drives
  * it). Delete it afterwards with `cf workers delete loopback-cpu-check`.
  */
@@ -22,9 +22,25 @@ const plan = (mode: string | undefined) => {
 	return planFrom(process.env["LOOPBACK_PLAN"]);
 };
 
+/**
+ * The deployment's name: this Worker's, and its core's, `<name>-core`. Deploy both with
+ * `pnpm run deploy` at the root, which sets `LOOPBACK_EDGE_SPACE` to `transferred` for the one deploy
+ * that hands a 0.7 install's spaces to the core.
+ */
+const name = process.env["LOOPBACK_NAME"] || "loopback";
+
+/**
+ * The `Space` namespace this Worker held before 0.8, declared handed over to the core for the deploy
+ * that moves it, and gone after: the edge holds no spaces.
+ */
+const transferred =
+	process.env["LOOPBACK_EDGE_SPACE"] === "transferred"
+		? { Space: exports.durableObject({ state: "transferred", transferredTo: `${name}-core` }) }
+		: undefined;
+
 export default defineConfig(({ mode }) => ({
 	worker: {
-		name: mode === CPU_CHECK ? "loopback-cpu-check" : "loopback",
+		name: mode === CPU_CHECK ? `${name}-cpu-check` : name,
 		...(mode === CPU_CHECK ? { limits: { cpuMs: 10 } } : {}),
 		entrypoint,
 		compatibilityDate: "2026-10-19",
@@ -44,12 +60,13 @@ export default defineConfig(({ mode }) => ({
 		},
 		env: {
 			// The core, which holds every space and its images: deployed first, as loopback-core.
-			CORE: bindings.worker({ worker: "loopback-core", exportName: "Core" }),
+			CORE: bindings.worker({ worker: `${name}-core`, exportName: "Core" }),
 			// Who may use this Loopback: {"<person>": "<token>"}, each token from `openssl rand -hex 32`.
 			LOOPBACK_TOKENS: bindings.secret(),
 			LOOPBACK_PLAN: bindings.text(plan(mode)),
 			// Which deploy the edge is from, which it names on every answer.
 			CF_VERSION_METADATA: bindings.versionMetadata(),
 		},
+		...(transferred === undefined ? {} : { exports: transferred }),
 	},
 }));

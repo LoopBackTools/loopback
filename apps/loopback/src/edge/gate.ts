@@ -2,6 +2,7 @@ import { Config, Context, Data, Effect, Layer, Option, Redacted } from "effect";
 import { createRemoteJWKSet, errors, jwtVerify } from "jose";
 import { z } from "zod";
 import { NotConfigured } from "./problems.ts";
+import { NO_TOKENS, OLD_TOKEN, readTokens } from "./tokens.ts";
 
 /** Who a request is from, and which space it opens: the caller the core is told about. */
 export interface Access {
@@ -41,11 +42,6 @@ const digest = (text: string) => crypto.subtle.digest("SHA-256", new TextEncoder
 /** The space a token-gated deployment serves. */
 export const DEFAULT_SPACE = "default";
 
-/** The shortest token accepted: long enough that guessing it is hopeless. */
-const MIN_TOKEN_LENGTH = 32;
-
-const MAKE_ONE = "Generate one with `openssl rand -hex 32`.";
-
 /** Someone a deployment's tokens let in, with their token's digest. */
 interface Person {
 	readonly id: string;
@@ -54,65 +50,14 @@ interface Person {
 
 const refuse = (message: string) => Effect.die(new NotConfigured(message));
 
-/**
- * The people `LOOPBACK_TOKENS` lets in. A map that can't be trusted is refused outright, naming the
- * person it is about and never their token: one that isn't a JSON object or is empty, a person with
- * no name, and a token that is short, one character repeated, or another person's too.
- */
-const peopleIn = (tokens: string): Effect.Effect<ReadonlyArray<Person>> =>
-	Effect.gen(function* () {
-		const notAMap = `LOOPBACK_TOKENS must be a JSON object from each person to their token, such as {"owner": "<token>"}. ${MAKE_ONE}`;
-		let parsed: unknown;
-		try {
-			parsed = JSON.parse(tokens);
-		} catch {
-			return yield* refuse(notAMap);
-		}
-		if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-			return yield* refuse(notAMap);
-		}
-		const entries = Object.entries(parsed);
-		if (entries.length === 0) {
-			return yield* refuse(
-				`LOOPBACK_TOKENS has no one in it: put each person's token in it, as {"owner": "<token>"}. ${MAKE_ONE}`,
-			);
-		}
-		const holders = new Map<string, string>();
-		for (const [id, token] of entries) {
-			if (id.trim() === "") {
-				return yield* refuse(
-					'LOOPBACK_TOKENS has a person with no name: give each person a name, as in {"owner": "<token>"}.',
-				);
-			}
-			if (typeof token !== "string") {
-				return yield* refuse(
-					`The token for "${id}" in LOOPBACK_TOKENS must be a string. ${MAKE_ONE}`,
-				);
-			}
-			if (token.length < MIN_TOKEN_LENGTH) {
-				return yield* refuse(
-					`The token for "${id}" in LOOPBACK_TOKENS is shorter than ${MIN_TOKEN_LENGTH} characters. ${MAKE_ONE}`,
-				);
-			}
-			if (new Set(token).size === 1) {
-				return yield* refuse(
-					`The token for "${id}" in LOOPBACK_TOKENS is one character repeated, which anyone could guess. ${MAKE_ONE}`,
-				);
-			}
-			const holder = holders.get(token);
-			if (holder !== undefined) {
-				return yield* refuse(
-					`"${holder}" and "${id}" have the same token in LOOPBACK_TOKENS: give each person their own. ${MAKE_ONE}`,
-				);
-			}
-			holders.set(token, id);
-		}
-		return yield* Effect.promise(() =>
-			Promise.all(
-				entries.map(async ([id, token]) => ({ id, digest: await digest(String(token)) })),
-			),
-		);
-	});
+/** The people `LOOPBACK_TOKENS` lets in, digested, or the deployment refused for a map it can't trust. */
+const peopleIn = (setting: string): Effect.Effect<ReadonlyArray<Person>> => {
+	const tokens = readTokens(setting);
+	if ("problem" in tokens) return refuse(tokens.problem);
+	return Effect.promise(() =>
+		Promise.all(tokens.people.map(async ({ id, token }) => ({ id, digest: await digest(token) }))),
+	);
+};
 
 const setting = (name: string) =>
 	Config.option(Config.NonEmptyString(name)).pipe(
@@ -133,14 +78,8 @@ export const makeTokensGate: Effect.Effect<Gate["Service"]> = Effect.gen(functio
 				Effect.catch(() => Effect.succeed(Option.none<Redacted.Redacted>())),
 			);
 			if (Option.isNone(tokens)) {
-				if (Option.isSome(yield* setting("LOOPBACK_TOKEN"))) {
-					return yield* refuse(
-						'LOOPBACK_TOKEN is replaced by LOOPBACK_TOKENS: put your token in it as {"owner": "<token>"} and deploy again.',
-					);
-				}
-				return yield* refuse(
-					'LOOPBACK_TOKENS is not set. Deploy with it in a secrets file (`cf deploy --secrets-file <file>`), as {"owner": "<token>"} with a token from `openssl rand -hex 32`, or set LOOPBACK_JWKS_URL and the other JWT settings for a space per tenant.',
-				);
+				if (Option.isSome(yield* setting("LOOPBACK_TOKEN"))) return yield* refuse(OLD_TOKEN);
+				return yield* refuse(NO_TOKENS);
 			}
 			return yield* peopleIn(Redacted.value(tokens.value));
 		}),

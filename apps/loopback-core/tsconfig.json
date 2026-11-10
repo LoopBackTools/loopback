@@ -1,0 +1,8 @@
+{
+	"extends": "../../tsconfig.base.json",
+	"compilerOptions": {
+		// cloudflare.config.ts reads its settings from the environment it is deployed from.
+		"types": ["node"]
+	},
+	"include": ["src", "cloudflare.config.ts", ".cloudflare/types"]
+}
