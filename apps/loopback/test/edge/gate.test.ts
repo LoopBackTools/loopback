@@ -62,6 +62,7 @@ describe("a deployment's tokens", () => {
 		["a short token", JSON.stringify({ ada: "short-but-not-32-chars" }), '"ada"'],
 		["one character repeated", JSON.stringify({ ada: "a".repeat(40) }), '"ada"'],
 		["two people sharing a token", JSON.stringify({ ada: good, owner: good }), '"ada" and "owner"'],
+		["a token where a name goes", JSON.stringify({ [good]: "owner" }), "as long as a token"],
 	])("refuses a map it can't trust: %s", async (_case, tokens, names) => {
 		const response = await api("/whoami", {
 			token: good,
