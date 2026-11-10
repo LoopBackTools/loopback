@@ -16,13 +16,15 @@ You need Node 24.22 or later (or 22.23 or later) and pnpm 11.
 
 ```sh
 pnpm install
+pnpm generate
 cp apps/loopback/.dev.vars.example apps/loopback/.dev.vars
 pnpm dev
 ```
 
-`pnpm dev` serves the Worker and the inbox together, with hot reload, at the address Vite prints.
-Sign in with the token in `.dev.vars`. Connect an agent to the same address's `/mcp` to try asks end
-to end.
+Put yourself in `.dev.vars` first, as `LOOPBACK_TOKENS={"you":"<token>"}` with a token from
+`openssl rand -hex 32`. `pnpm dev` serves the edge, its core and the inbox together, with hot reload,
+at the address Vite prints. Sign in with your token. Connect an agent to the same address's `/mcp` to
+try asks end to end.
 
 ## The checks
 
@@ -37,8 +39,9 @@ pnpm test
 pnpm build
 ```
 
-The server's tests run inside the Workers runtime through `@cloudflare/vitest-plugin`, against a
-local Durable Object and R2 bucket. The SDK's and the inbox's run in Node.
+The core's and the edge's tests run inside the Workers runtime through `@cloudflare/vitest-plugin`,
+against a local Durable Object and R2 bucket; the edge's call the core through a real service
+binding. The SDK's, the inbox's and the root's architecture rules run in Node.
 
 ## Changing the API
 
@@ -67,7 +70,7 @@ Changing only wording (descriptions, titles, examples) needs no revision.
 
 ## Code
 
-- TypeScript throughout. The server and the SDK are written in
+- TypeScript throughout. The core, the edge and the SDK are written in
   [Effect](https://effect.website): typed errors, services as layers, and no unhandled promises.
 - Formatting is oxfmt's (tabs, 100 columns). Don't hand-format around it.
 - Comments say why, not what. Name things by what they mean to someone using Loopback.

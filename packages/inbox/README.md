@@ -79,4 +79,8 @@ Kumo themes by `data-mode="light"` or `"dark"` on the root element, which your a
   browser's permission and remembers the choice.
 - `useMe()` and `whoIs(actor, me)` name people as the inbox does: "You", or their name.
 
+## Stability
+
+Until 1.0, a minor release may change this package's API. Pin the minor version you build on.
+
 MIT licensed.

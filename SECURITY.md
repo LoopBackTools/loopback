@@ -20,12 +20,13 @@ deploying the release that carries the fix.
 
 These are the boundaries a report is most useful against:
 
-- **The token.** A deployment's `LOOPBACK_TOKEN` is the one credential for its inbox and its MCP
-  endpoint. Loopback accepts it only in the `Authorization` header and compares it in constant time.
-  The inbox's event socket opens with a single-use ticket that lapses within a minute, never the
-  token.
-- **Props from an invoker.** Behind a dispatcher, access comes from `props.loopback`, which only code
-  deployed on the same Cloudflare account can set. See [`docs/hosting.md`](docs/hosting.md).
+- **The tokens.** Each person in a deployment's `LOOPBACK_TOKENS` has a credential of their own for
+  its inbox and its MCP endpoint. Loopback accepts one only in the `Authorization` header, compares
+  it in constant time with every person's, and refuses a map with a short, guessable or shared
+  token. The inbox's event socket opens with a single-use ticket that lapses within a minute, never
+  a token.
+- **The core.** The core Worker has no public address, and believes the caller its edge names: only
+  the edge, through its service binding, can reach it.
 - **Image uploads.** An upload URL is a single-use capability, valid for fifteen minutes, for one
   image type and a fixed size limit. A review can show only images its own space holds.
 - **The inbox.** Its files are served with a content security policy that allows scripts only from

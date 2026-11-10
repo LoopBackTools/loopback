@@ -4,17 +4,36 @@
  agent (Claude Code, …)              browser, or any frontend on the SDK
       │  MCP over HTTP                      │  REST + WebSocket
       ▼                                     ▼
- ┌──────────────────────── Worker ─────────────────────────┐
- │ createLoopback({ gate, spaces? })                       │
- │   Gate: request → Access { space, actor } | Unauthorized │
- │     token: one space · JWT: the space a claim names      │
- │   /mcp · /api/v1/* · /api/v1/events · /llms.txt · inbox  │
- └──────────────┬──────────────────────────────┬───────────┘
-                ▼ RPC                          ▼
-        Space Durable Object (SQLite)       R2 (images)
-        asks, threads, upload tickets,
-        waiting agents, connected inboxes
+ ┌──────────────────── edge: loopback (apps/loopback) ────────────────────┐
+ │ routes and MCP tools generated from the contract (typespec-hono,        │
+ │ typespec-http-mcp) · gate: LOOPBACK_TOKENS or JWT → { space, actor }    │
+ │ /mcp · /api/v1/* · /api/v1/events · /llms.txt · the inbox               │
+ └───────────────┬─────────────────────────────────────────────────────────┘
+                 │ service binding CORE → entrypoint Core (Workers RPC)
+                 │ CoreRpc: the contract's operations by id, the agent's
+                 │ operations (with a wait and a progress callback),
+                 │ fetch (event sockets, by ticket), erase, revision
+                 ▼
+ ┌──────────── core: loopback-core (@loopbacktools/core) ─────────────────┐
+ │ no public address · Core: one runtime per environment                   │
+ └───────────────┬──────────────────────────────┬──────────────────────────┘
+                 ▼ RPC                           ▼
+         Space Durable Object (SQLite)       R2 (images)
+         asks, threads, upload tickets,
+         waiting agents, connected inboxes
 ```
+
+Every dependency points inward, towards the contract, and the root architecture test
+(`scripts/architecture.test.ts`) holds each arrow:
+
+```
+protocol  ←  core  ←  apps/loopback-core
+   ↑   ↖______________  apps/loopback's edge (@loopbacktools/core/rpc only)
+  sdk  ←  inbox  ←  app  ←  apps/loopback's inbox
+```
+
+The core is built verbatim from `@loopbacktools/core` by every deployment, this one and any host's.
+Each deployment owns its edge: the code it generates from the contract, its gate, its limits.
 
 ## Asks
 
@@ -50,79 +69,88 @@ class Gate extends Context.Service<
 >()("loopback/Gate") {}
 ```
 
-The deployment's settings choose between two gates. The token gate opens one space behind one
-secret. The JWT gate opens a space per tenant behind any login that issues JWTs: a token signed by
+The gate is the edge's, and the core believes what its edge tells it: it has no public address, so
+only the edge can call it. The deployment's settings choose between two gates. The token gate reads
+`LOOPBACK_TOKENS`, a map from each person to their token, and opens the deployment's one space as
+the person whose token it is; every entry is compared in constant time, all of them every time. The
+JWT gate opens a space per tenant behind any login that issues JWTs: a token signed by
 one of the login's keys opens the space a configured claim names, as the person in `sub`, and MCP
 clients discover the login through the gate's `authorizationServers`. One deployment then serves
 every tenant, each in its own Durable Object. [`hosting.md`](hosting.md) explains how to set it up.
 
 A host builds its own edge in front of the core rather than wrapping a server: it calls the core's
-RPC, `@loopbacktools/core/rpc`, with its own gate, limits and metering around each call. The layering
-keeps that possible: the domain knows nothing else, the space (the `Space` object and its
-operations) knows only the domain, the core knows no edge, and architecture suites fail the build if
-any of it reaches outward.
+RPC, `@loopbacktools/core/rpc`, with its own gate, limits and metering around each call. Inside the
+core, the domain knows nothing else, the space (the `Space` object and its operations) knows only
+the domain, and the core's own architecture test fails the build if any of it reaches outward.
 
 ## The contract
 
 `packages/protocol/spec/main.tsp` is the single definition of every shape Loopback speaks: the REST
-operations a frontend uses, the frames the event socket sends, and the inputs and results of the
-MCP tools. One `pnpm generate` produces, from it:
+operations a frontend uses, the operations an agent calls, the frames the event socket sends, and the
+messages each carries. `pnpm generate` produces, from it:
 
-- the Hono routes, MCP tools and zod validators each edge compiles for itself (`apps/loopback/src/generated`);
-- framework-free types for clients (`packages/protocol/src/generated`);
-- the OpenAPI document, served at `/api/v1/openapi.json`.
+- framework-free types for clients and the core (`packages/protocol/src/generated`);
+- the OpenAPI document, served at `/api/v1/openapi.json`;
+- in each edge, the Hono routes, the MCP tools and the zod validators both use
+  (`apps/loopback/src/generated`), each tool named by its operation id, titled by its summary and
+  described by its doc, word for word.
 
-Generated files are committed, and CI fails if they drift from the definition. The MCP tools are
-registered by hand, because five of them block, but take their schemas from the same compile.
+Nothing generated is committed; `revisions/` keeps each revision of the contract frozen, and the
+protocol's tests fail when a shape changes without a new one.
 
-## The server
+## The edge and the core
 
-The server is written in Effect. Durable Object storage, R2, the gate and the route to a space are
-services provided as layers. The Worker builds one runtime per environment; the Durable Object
-builds its own. Each REST handler is an Effect program whose declared errors become the responses
-the contract declares; anything else is a defect, logged and answered with a 500.
+Both are written in Effect. The edge checks who is calling and hands each operation to the core, with
+the caller (`{ space, actor }`) as the first argument. The inbox's operations go straight through:
+the core answers each with the status and body the contract declares. The agent's go to the core's
+agent operations, which wait for the person and answer in the words agents are given, the same
+through every edge. A failure the core can't answer is thrown back over RPC, logged where it
+happened, and the edge answers it as an incident to quote.
+
+**What crosses the binding** is the core's RPC, `CoreRpc`, typed with the contract's messages only:
+the contract's operations by id, `askQuestion` and the other agent operations with a `Wait` (a
+budget, a keep-alive and a progress callback, which is a stub back into the edge), `createUpload`,
+`fetch` for an inbox's socket by ticket, `erase` for a host removing a tenant, and `revision`.
+
+**Deploy order and additive changes.** The core is deployed first, then the edge. A core serves edges
+at its own revision of the contract or older, so a revision only adds, and a method an older edge
+calls is never taken away (`packages/core/test/contract-freeze.test.ts`). An edge newer than its core
+asks again for three seconds, then answers "deploy loopback-core first".
+
+**Builds** are compared inside the core only: it calls each space as its own code, revision and
+build, and a space on older code restarts onto newer. The edge names its own build on every answer,
+for the inbox to notice it was updated.
 
 A space's operations run inside its Durable Object and cross RPC as their `Exit`, encoded as JSON,
-so a typed error raised in the object arrives intact in the Worker.
+so a typed error raised in the object arrives intact in the core.
 
 ## Getting a reply to the agent
 
-People take minutes to reply, and an agent should not stop for them. Loopback hands replies back in
-one of two ways, chosen per request by what the client says it supports.
-
-**Background tasks.** A client that declares the MCP Tasks extension
-(`io.modelcontextprotocol/tasks`) gets a task back from `ask_question`, `request_review`,
-`send_briefing`, `answer_follow_up` and `answer_briefing` at once, and carries on. A task follows one of the agent's turns on an ask: its
-id is `<ask id>:<turn>`, where the turn is the thread entry the agent's move ended with (0 for
-opening the ask). The client polls `tasks/get`, every two seconds at first and less often as the
-wait grows, since each poll is a request to the space; the task completes with the first reply the
-person gives after that turn, carrying the same result a waiting call would return. An
-agent can have any number of tasks open. `tasks/cancel` stops a task: the ask stays open, and the
-person can still answer it.
-
-**Waiting.** A client without background tasks cannot be handed one, so its call holds its HTTP
-request open, and the Worker waits on a **wait socket**: a WebSocket to the space at
-`/wait/<askId>`, which the space accepts with the hibernation API. The space holds no timer and no
-request for the wait, so it can sleep while the agent waits. When a reply lands, the space wakes and
-sends the socket one frame, `reply`; the Worker then takes the reply with an RPC. Every 25 seconds
-the Worker pings the socket, which the space's auto-response answers without waking it, and sends
-an MCP progress notification, which keeps clients' idle timers from giving up. A socket dropped
+People take minutes to reply, and a call waits for them. `ask_question`, `request_review`,
+`send_briefing`, `answer_follow_up` and `answer_briefing` hold their request open while the core waits
+on a **wait socket**: a WebSocket from the core to the space at `/wait/<askId>`, which the space
+accepts with the hibernation API. The space holds no timer and no request for the wait, so it can
+sleep while the agent waits. When a reply lands, the space wakes and sends the socket one frame,
+`reply`; the core then takes the reply with an RPC. Every 25 seconds the core pings the socket, which
+the space's auto-response answers without waking it, and calls the edge's progress callback, which
+sends an MCP progress notification, keeping clients' idle timers from giving up. A socket dropped
 under a wait, by a restart or by the space moving onto new code, is opened again.
 
-The Worker marks a reply delivered only once its own call has it, so a wait whose caller has gone
-leaves the reply for the caller's retry. Each lap costs the Worker about a millisecond of CPU, so a
-deployment on Workers Free (`plan: "free"`) ends a wait after ten minutes with "no reply yet: call
-again with the same arguments", and the call again rejoins the ask; on Paid a wait lasts until the
-reply.
+The core marks a reply delivered only once its own call has it, so a wait whose caller has gone
+leaves the reply for the caller's retry: the edge's progress callback rejects once its client has
+gone, and the core stops waiting at its next lap. Each lap costs about a millisecond of CPU, so a
+deployment on Workers Free ends a wait after ten minutes with "no reply yet: call again with the same
+arguments", and the call again rejoins the ask; on Paid a wait lasts until the reply. The wait's
+budget is the edge's, which knows its plan and its clients.
 
-Either way, everything is stored in SQLite. The Worker's calls into a space are retried on a fresh
+Background tasks (the MCP Tasks extension) return once the tool generator supports them; until then,
+every client waits.
+
+Everything is stored in SQLite. The core's calls into a space are retried on a fresh
 stub when Cloudflare marks a failure retryable, as a reset by a deploy is, and the operation is safe
-to run twice; a reply is not, so a refused one is the inbox's to send again. While polls or laps
-arrive, or while a wait socket is open, the ask shows **agent waiting** in the inbox. A poll shows
-the ask followed until its next poll is due, plus ten seconds, kept in the space's storage with an
-alarm set for when it runs out, so the space can sleep between polls. When that runs out, at once
-when a task is cancelled, and at once when the last wait socket closes, it shows that the agent has
-gone. Replying is still possible, and the reply is
+to run twice; a reply is not, so a refused one is the inbox's to send again. While a wait socket is
+open, the ask shows **agent waiting** in the inbox; when the last one closes, it shows at once that
+the agent has gone. Replying is still possible, and the reply is
 kept.
 
 A retried call (the same question or review, from the same client and project) **rejoins** the ask
@@ -143,7 +171,7 @@ into an inbox state with a pure reducer. The web inbox, `@loopbacktools/inbox`, 
 state is kept per client, so handing it another client follows another space, and which ask is
 open is the host's to keep. `@loopbacktools/app` is the app around it, routed by path, which every
 deployment composes with its own sign-in and workspaces; `apps/loopback` composes it with a token
-sign-in.
+sign-in. The edge hands an inbox's socket to the core with the ticket, and the core spends it.
 
 ## Images
 

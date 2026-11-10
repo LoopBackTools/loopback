@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+Loopback is now two Workers: the core, which holds every inbox and its images and has no public
+address, and the edge in front of it, which serves agents, the API and the inbox. `pnpm run deploy`
+installs both, or upgrades a 0.7 deployment in place, moving its Durable Object namespace and its
+bucket into the core without copying them; a deploy stopped partway finishes when run again. See
+"Upgrade, move or remove" in the README.
+
+- **Tokens for each person.** `LOOPBACK_TOKENS` replaces `LOOPBACK_TOKEN`: a map from each person to
+  their token, each opening the same inbox as that person, so you can let friends in and see whose
+  agent asked what. Put your current token in it under `owner` when you upgrade. A map Loopback
+  can't trust is refused before anything is deployed.
+- **The edge is generated from the contract.** The agent's operations are declared in the TypeSpec
+  contract (revision 2), and the edge's routes and MCP tools are generated from it. The tools say
+  what they always said, with one result added: a call that waits answers with `{ askId, reply,
+  message }`, where `message` is what the reply means.
+- **Every call waits.** MCP background tasks are not offered until the generator supports them, so
+  a client that used them now waits on the call, kept alive by progress every 25 seconds.
+- **Packages.** `@loopbacktools/core` is new: the core, built verbatim by every deployment.
+  `@loopbacktools/server` is replaced by it; a host writes its own edge in front of the core
+  (`docs/hosting.md`). `@loopbacktools/sdk` takes `effect` as a peer, like the others.
+
 The inbox is redesigned for reading and answering, dark and light alike, with contrast well past the
 minimum and no text under 14px. The list wraps titles instead of cutting them off, shows "Agent
 waiting" only when an agent is, and opens the ask beside it as a tab. An ask reads top to bottom:

@@ -235,7 +235,7 @@ Through the real entry points, not only unit tests:
 ## Decided without the person (check these)
 
 - **The names**: ask kind `briefing`, tools `send_briefing` and `answer_briefing`, reply outcome
-  `responded`. They go into the contract the hosted product builds on, so this is the cheapest
+  `responded`. They go into the contract every deployment builds on, so this is the cheapest
   moment to rename them.
 - **The turn is per briefing, not per point.** You send once to cover everything you touched; the
   agent answers it all in one move. This is what lets briefings reuse the existing turns, tasks

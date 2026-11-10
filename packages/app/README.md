@@ -87,4 +87,8 @@ Beside the inbox's, in your stylesheet:
 @import "@loopbacktools/app/styles.css";
 ```
 
+## Stability
+
+Until 1.0, a minor release may change this package's API. Pin the minor version you build on.
+
 MIT licensed.

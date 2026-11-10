@@ -136,3 +136,7 @@ release can grow ends in an `unknown` member: an `Ask` of kind `unknown`, a `Blo
 `unknown`, a `Reply` with the outcome `unknown`. Each keeps what can still be shown and what it was
 (`was`). An exhaustive `switch` has to handle it, and the compiler says so. Socket frames of a type
 the client doesn't know are skipped. What a reply sends is `ReplyBody`.
+
+## Stability
+
+Until 1.0, a minor release may change this package's API. Pin the minor version you build on.

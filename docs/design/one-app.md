@@ -10,8 +10,9 @@ writes its own. This proposes one app that every deployment composes, as the ser
 
 ## Why
 
-- **The server already works this way.** `createLoopback({ gate, spaces, inboxUrl })` is the whole
-  server, and a deployment supplies only what differs: who may call it, and how. A host that signs
+- **The server already works this way.** The server's factory (since replaced by the core and an
+  edge per deployment) is the whole server, and a deployment supplies only what differs: who may
+  call it, and how. A host that signs
   people in its own way composes the same server with its own gate in a few dozen lines.
 - **The front end doesn't.** `apps/loopback` has its own shell (about 280 lines), and a host with
   its own sign-in writes another. Every change to the shell is made once per deployment, and they
