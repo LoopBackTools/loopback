@@ -1,0 +1,24 @@
+{
+	"revision": 2,
+	"methods": [
+		"Asks_list",
+		"Asks_read",
+		"Asks_reply",
+		"EventTickets_issue",
+		"Files_read",
+		"Session_whoami",
+		"Snapshots_read",
+		"Uploads_store",
+		"answerBriefing",
+		"answerFollowUp",
+		"askQuestion",
+		"cancelTask",
+		"createUpload",
+		"erase",
+		"fetch",
+		"followTask",
+		"requestReview",
+		"revision",
+		"sendBriefing"
+	]
+}

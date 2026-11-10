@@ -31,12 +31,15 @@
 		"build": "tsc -p tsconfig.build.json"
 	},
 	"dependencies": {
-		"@loopbacktools/protocol": "workspace:*",
-		"effect": "catalog:"
+		"@loopbacktools/protocol": "workspace:*"
 	},
 	"devDependencies": {
 		"@effect/vitest": "catalog:",
+		"effect": "catalog:",
 		"typescript": "catalog:",
 		"vitest": "catalog:"
+	},
+	"peerDependencies": {
+		"effect": "^4.0.6"
 	}
 }

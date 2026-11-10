@@ -32,6 +32,7 @@
 		"deploy": "node scripts/deploy.ts"
 	},
 	"devDependencies": {
+		"@modelcontextprotocol/client": "catalog:",
 		"@types/node": "catalog:",
 		"es-module-lexer": "catalog:",
 		"oxfmt": "catalog:",
