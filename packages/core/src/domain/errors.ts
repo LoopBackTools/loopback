@@ -45,25 +45,3 @@ export class UploadIncomplete extends Schema.TaggedError<UploadIncomplete>()(
 export class UploadRejected extends Schema.TaggedError<UploadRejected>()("UploadRejected", {
 	reason: Schema.String,
 }) {}
-
-/**
- * The deployment declined to open an ask or an upload, as a host's limits can: the space itself never
- * declines. The reason is written for the agent, and says what would let it through.
- */
-export class Declined extends Schema.TaggedError<Declined>()("Declined", {
-	reason: Schema.String,
-}) {}
-
-/**
- * The deployment's limits refused the request: its space has made too many lately. The reason is
- * written for the caller, and `retryAfter` says how many seconds to wait before trying again.
- */
-export class RateLimited extends Schema.TaggedError<RateLimited>()("RateLimited", {
-	reason: Schema.String,
-	retryAfter: Schema.Number,
-}) {}
-
-/** The request carries no credentials the gate accepts. */
-export class Unauthorized extends Schema.TaggedError<Unauthorized>()("Unauthorized", {
-	reason: Schema.String,
-}) {}

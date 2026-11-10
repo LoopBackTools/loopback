@@ -1,9 +1,2 @@
-import { createLoopback, ConfiguredGate } from "@loopbacktools/server";
-import { env } from "cloudflare:workers";
-
-export { Space } from "@loopbacktools/server";
-
-export default createLoopback({
-	gate: ConfiguredGate,
-	plan: env.LOOPBACK_PLAN === "paid" ? "paid" : "free",
-});
+// The deployable edge: everything it does is in ./edge, in front of the core it is bound to.
+export { default } from "./edge/worker.ts";

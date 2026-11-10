@@ -677,6 +677,10 @@ interface Uploads {
 		@path spaceId: string,
 		@path token: string,
 		@header contentType: string,
+
+		/** The image's size in bytes. An image sent without it is refused with 422. */
+		@added(Revisions.r2) @header contentLength?: safeint,
+
 		@body body: bytes,
 	): {
 		@statusCode statusCode: 201;

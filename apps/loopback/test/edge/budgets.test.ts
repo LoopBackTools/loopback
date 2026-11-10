@@ -1,18 +1,14 @@
-import { describe, expect, it } from "@effect/vitest";
-import { budgetsFor, PLANS } from "../src/budgets.ts";
+import { describe, expect, it } from "vitest";
+import { budgetsFor, PLANS } from "../../src/edge/budgets.ts";
 
 describe("budgets", () => {
-	it("paid waits until the reply, and polls as before", () => {
-		expect(budgetsFor("paid")).toEqual({
-			waitMs: Infinity,
-			keepAliveMs: 25_000,
-			pollMs: [2_000, 10_000, 30_000],
-		});
+	it("on Paid, waits until the reply", () => {
+		expect(budgetsFor("paid")).toEqual({ waitMs: Infinity, keepAliveMs: 25_000 });
 	});
 
-	it("ends free's waits, and polls it less often", () => {
-		expect(PLANS.free.waitMs).toBeLessThan(Infinity);
-		expect(PLANS.free.pollMs[0]).toBeGreaterThan(PLANS.paid.pollMs[0]);
+	it("on Free, ends a wait after ten minutes, keeping alive as often", () => {
+		expect(budgetsFor("free")).toEqual({ waitMs: 600_000, keepAliveMs: 25_000 });
+		expect(PLANS.free.waitMs).toBeLessThan(PLANS.paid.waitMs);
 	});
 
 	it("an override replaces only its own budget", () => {
@@ -26,6 +22,6 @@ describe("budgets", () => {
 
 	it("refuses a budget that isn't a positive number", () => {
 		expect(() => budgetsFor("paid", { waitMs: 0 })).toThrow(/waitMs/);
-		expect(() => budgetsFor("paid", { pollMs: [2_000, -1, 30_000] })).toThrow(/pollMs/);
+		expect(() => budgetsFor("paid", { keepAliveMs: -1 })).toThrow(/keepAliveMs/);
 	});
 });

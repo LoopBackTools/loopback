@@ -169,8 +169,17 @@ export type AskOutcome =
 	| ({ readonly outcome: "replied" } & Replied)
 	/** The wait ran out, or its caller went: calling again with the same input rejoins the ask. */
 	| { readonly outcome: "waiting"; readonly askId: string; readonly message: string }
-	/** The space would not take it, and says why. */
-	| { readonly outcome: "refused"; readonly message: string };
+	/**
+	 * The space would not take it, and says why, with the status and problem code the contract
+	 * answers a refused agent operation with: 404 for no such ask, 409 for an ask that is closed or
+	 * the person's move, 422 for content that doesn't fit.
+	 */
+	| {
+			readonly outcome: "refused";
+			readonly status: 404 | 409 | 422;
+			readonly code: "not_found" | "ask.closed" | "ask.human_turn" | "content.invalid";
+			readonly message: string;
+	  };
 
 /** A background task as its agent polls it. */
 export type TaskView = {

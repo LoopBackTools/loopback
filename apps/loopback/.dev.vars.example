@@ -1,3 +1,4 @@
-# Copy to .dev.vars for local development, with a token of your own from `openssl rand -hex 32`.
-# The inbox and agents use the same one. It must be at least 32 characters.
-LOOPBACK_TOKEN=0000000000000000000000000000000000000000000000000000000000000000
+# Copy to .dev.vars for local development. Who may use this Loopback, as {"<person>": "<token>"},
+# each token from `openssl rand -hex 32`: the inbox and that person's agents use the same one. The
+# edge refuses an empty map, so put at least yourself in it.
+LOOPBACK_TOKENS={}

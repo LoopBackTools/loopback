@@ -1,4 +1,4 @@
-import { INSTRUCTIONS } from "./mcp.ts";
+import { INSTRUCTIONS } from "./instructions.ts";
 
 /** How agents sign in to a deployment: with OAuth through its login, or with its token. */
 export type AgentSignIn = "oauth" | "token";

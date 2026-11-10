@@ -1,4 +1,4 @@
-import { bindings, defineConfig, exports } from "cf/config";
+import { bindings, defineConfig } from "cf/config";
 import * as entrypoint from "./src/worker.ts" with { type: "cf-worker" };
 import { planFrom, planNotice } from "./plan.ts";
 
@@ -43,15 +43,13 @@ export default defineConfig(({ mode }) => ({
 			runWorkerFirst: ["/api/*", "/mcp", "/.well-known/*", "/llms.txt"],
 		},
 		env: {
-			LOOPBACK_TOKEN: bindings.secret(),
+			// The core, which holds every space and its images: deployed first, as loopback-core.
+			CORE: bindings.worker({ worker: "loopback-core", exportName: "Core" }),
+			// Who may use this Loopback: {"<person>": "<token>"}, each token from `openssl rand -hex 32`.
+			LOOPBACK_TOKENS: bindings.secret(),
 			LOOPBACK_PLAN: bindings.text(plan(mode)),
-			// No bucket name: the first deploy provisions one.
-			FILES: bindings.r2(),
-			// Which deploy the code is from: a space still on older code restarts onto newer.
+			// Which deploy the edge is from, which it names on every answer.
 			CF_VERSION_METADATA: bindings.versionMetadata(),
 		},
-		// The server reaches its spaces through the runtime's binding for this export, so no
-		// Durable Object binding names this Worker, and a copy deployed under another name still works.
-		exports: { Space: exports.durableObject({ storage: "sqlite" }) },
 	},
 }));

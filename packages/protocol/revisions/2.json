@@ -787,6 +787,16 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "content-length",
+            "in": "header",
+            "required": false,
+            "description": "The image's size in bytes. An image sent without it is refused with 422.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
           }
         ],
         "responses": {

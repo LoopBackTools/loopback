@@ -184,10 +184,12 @@ describe("the agent's operations, through the binding", () => {
 		});
 	});
 
-	it("refuses what the space won't take, in the words agents already know", async () => {
+	it("refuses what the space won't take, with the contract's status and code, in the words agents already know", async () => {
 		const caller = callerIn(crypto.randomUUID());
 		expect(await core().answerFollowUp(caller, { askId: "missing", answer: "Hello?" })).toEqual({
 			outcome: "refused",
+			status: 404,
+			code: "not_found",
 			message: 'No ask "missing".',
 		});
 		expect(
@@ -195,7 +197,12 @@ describe("the agent's operations, through the binding", () => {
 				askId: "missing",
 				answers: [{ point: "1", answer: "Hello?" }],
 			}),
-		).toEqual({ outcome: "refused", message: 'No briefing "missing".' });
+		).toEqual({
+			outcome: "refused",
+			status: 404,
+			code: "not_found",
+			message: 'No briefing "missing".',
+		});
 
 		const question = await core().askQuestion(caller, colour);
 		if (question.outcome !== "started") throw new Error(question.outcome);
@@ -203,6 +210,8 @@ describe("the agent's operations, through the binding", () => {
 			await core().answerFollowUp(caller, { askId: question.askId, answer: "Hello?" }),
 		).toEqual({
 			outcome: "refused",
+			status: 409,
+			code: "ask.human_turn",
 			message: "The person has not asked anything back on that ask, so there is nothing to answer.",
 		});
 		await reply(caller, question.askId, { outcome: "answered", selected: ["Red"] });
@@ -210,6 +219,8 @@ describe("the agent's operations, through the binding", () => {
 			await core().answerFollowUp(caller, { askId: question.askId, answer: "Hello?" }),
 		).toEqual({
 			outcome: "refused",
+			status: 409,
+			code: "ask.closed",
 			message: "That ask is closed; the person has already decided.",
 		});
 
@@ -218,12 +229,16 @@ describe("the agent's operations, through the binding", () => {
 		const early = { askId: briefing.askId, answers: [{ point: "1", answer: "Hello?" }] };
 		expect(await core().answerBriefing(caller, early)).toEqual({
 			outcome: "refused",
+			status: 409,
+			code: "ask.human_turn",
 			message:
 				"The person has not replied on that briefing since your last answers, so there is nothing to answer yet.",
 		});
 		await reply(caller, briefing.askId, { outcome: "dismissed" });
 		expect(await core().answerBriefing(caller, early)).toEqual({
 			outcome: "refused",
+			status: 409,
+			code: "ask.closed",
 			message:
 				"The person closed that briefing. Act on what they said, or ask a new question if something is still unclear.",
 		});
@@ -236,6 +251,8 @@ describe("the agent's operations, through the binding", () => {
 			}),
 		).toEqual({
 			outcome: "refused",
+			status: 422,
+			code: "content.invalid",
 			message: 'No uploaded image "nope". Upload it with create_image_upload first.',
 		});
 	});

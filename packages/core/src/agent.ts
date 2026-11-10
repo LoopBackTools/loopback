@@ -34,7 +34,15 @@ const taskOf = (
 	return Option.some({ askId: taskId.slice(0, split), turn });
 };
 
-const refused = (message: string): AskOutcome => ({ outcome: "refused", message });
+/** The refusals an agent's move can meet, each with the status and code the contract declares. */
+const refused = (
+	status: 404 | 409 | 422,
+	code: "not_found" | "ask.closed" | "ask.human_turn" | "content.invalid",
+	message: string,
+): AskOutcome => ({ outcome: "refused", status, code, message });
+
+const invalid = (error: ContentInvalid) =>
+	Effect.succeed(refused(422, "content.invalid", error.reason));
 
 const notYet = (tool: Tool, askId: string): AskOutcome => ({
 	outcome: "waiting",
@@ -182,7 +190,7 @@ const opened = (
 		const space = yield* spaceOf(caller);
 		const ask = yield* open(space);
 		return yield* settle(tool, caller, space, ask.id, ...latestTurn(ask), wait);
-	}).pipe(Effect.catchTag("ContentInvalid", (error) => Effect.succeed(refused(error.reason))));
+	}).pipe(Effect.catchTag("ContentInvalid", invalid));
 
 export const askQuestion = (
 	caller: Caller,
@@ -239,16 +247,20 @@ export const answerFollowUp = (caller: Caller, input: FollowUpInput, wait: Wait 
 		);
 	}).pipe(
 		Effect.catchTags({
-			AskNotFound: () => Effect.succeed(refused(`No ask "${input.askId}".`)),
+			AskNotFound: () => Effect.succeed(refused(404, "not_found", `No ask "${input.askId}".`)),
 			AskClosed: () =>
-				Effect.succeed(refused("That ask is closed; the person has already decided.")),
+				Effect.succeed(
+					refused(409, "ask.closed", "That ask is closed; the person has already decided."),
+				),
 			NotYourTurn: () =>
 				Effect.succeed(
 					refused(
+						409,
+						"ask.human_turn",
 						"The person has not asked anything back on that ask, so there is nothing to answer.",
 					),
 				),
-			ContentInvalid: (error) => Effect.succeed(refused(error.reason)),
+			ContentInvalid: invalid,
 		}),
 	);
 
@@ -273,20 +285,24 @@ export const answerBriefing = (
 		);
 	}).pipe(
 		Effect.catchTags({
-			AskNotFound: () => Effect.succeed(refused(`No briefing "${input.askId}".`)),
+			AskNotFound: () => Effect.succeed(refused(404, "not_found", `No briefing "${input.askId}".`)),
 			AskClosed: () =>
 				Effect.succeed(
 					refused(
+						409,
+						"ask.closed",
 						"The person closed that briefing. Act on what they said, or ask a new question if something is still unclear.",
 					),
 				),
 			NotYourTurn: () =>
 				Effect.succeed(
 					refused(
+						409,
+						"ask.human_turn",
 						"The person has not replied on that briefing since your last answers, so there is nothing to answer yet.",
 					),
 				),
-			ContentInvalid: (error) => Effect.succeed(refused(error.reason)),
+			ContentInvalid: invalid,
 		}),
 	);
 

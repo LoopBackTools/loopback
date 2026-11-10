@@ -5,5 +5,7 @@
 		"jsx": "react-jsx",
 		"types": ["vite/client", "@testing-library/jest-dom"]
 	},
-	"include": ["src/web", "test"]
+	"include": ["src/web", "test"],
+	// The edge's tests run in the Workers runtime, and are checked with its types by their own tsconfig.
+	"exclude": ["test/edge"]
 }
