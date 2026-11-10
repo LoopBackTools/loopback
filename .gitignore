@@ -18,6 +18,7 @@ packages/*/dist/
 .DS_Store
 
 # local tooling
+.alchemy/
 .claude/
 .mcp.json
 .idea/
