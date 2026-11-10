@@ -23,7 +23,7 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { type Observed, planDeploy, Refused, type Step } from "./deploy-plan.ts";
+import { type Observed, planDeploy, Refused, refusalBefore, type Step } from "./deploy-plan.ts";
 
 const root = resolve(import.meta.dirname, "..");
 const EDGE_DIR = join(root, "apps/loopback");
@@ -46,12 +46,16 @@ const argument = (flag: string): string | undefined => {
 	return value;
 };
 
-/** Runs `cf` with these arguments and reads what it prints as JSON; `undefined` for a Worker that doesn't exist. */
-const cf = (args: readonly string[]): unknown => {
+/**
+ * Runs `cf` with these arguments and reads what it prints as JSON. A read about one Worker answers
+ * `undefined` when that Worker doesn't exist; any other failure stops the deploy, since reading
+ * nothing where something is would plan the spaces away.
+ */
+const cf = (args: readonly string[], about: "account" | "worker" = "account"): unknown => {
 	const run = spawnSync(CF, args, { cwd: EDGE_DIR, encoding: "utf8", env: process.env });
 	const said = `${run.stdout}${run.stderr}`;
 	if (run.status !== 0) {
-		if (/\b10007\b|does not exist|not found/i.test(said)) return undefined;
+		if (about === "worker" && /\b10007\b|does not exist|not found/i.test(said)) return undefined;
 		throw new Failed(`\`cf ${args.join(" ")}\` failed:\n${said}`);
 	}
 	try {
@@ -75,7 +79,7 @@ const records = (value: unknown, key?: string): readonly Record<string, unknown>
 /** A Worker's current version: the one its latest deployment sends all its traffic to. */
 const currentVersion = (worker: string): Record<string, unknown> | undefined => {
 	const deployments = records(
-		cf(["workers", "deployments", "list", "--worker", worker]),
+		cf(["workers", "deployments", "list", "--worker", worker], "worker"),
 		"deployments",
 	);
 	const latest = deployments.toSorted((a, b) =>
@@ -83,7 +87,7 @@ const currentVersion = (worker: string): Record<string, unknown> | undefined => 
 	)[0];
 	const versionId = records(latest?.["versions"])[0]?.["version_id"];
 	if (typeof versionId !== "string") return undefined;
-	const version = cf(["workers", "versions", "get", "--worker-id", worker, versionId]);
+	const version = cf(["workers", "versions", "get", "--worker-id", worker, versionId], "worker");
 	return typeof version === "object" && version !== null
 		? (version as Record<string, unknown>)
 		: undefined;
@@ -127,8 +131,8 @@ const observe = (name: string): Observed => {
 		transferPending: edgeHoldsSpace && tagOfVersion(coreVersion) === EXPECTING,
 		...(edgeFilesBucket === undefined ? {} : { edgeFilesBucket }),
 		...(coreFilesBucket === undefined ? {} : { coreFilesBucket }),
-		edgeSecrets: records(cf(["workers", "secrets", "list", "--worker", name])).flatMap((secret) =>
-			typeof secret["name"] === "string" ? [secret["name"]] : [],
+		edgeSecrets: records(cf(["workers", "secrets", "list", "--worker", name], "worker")).flatMap(
+			(secret) => (typeof secret["name"] === "string" ? [secret["name"]] : []),
 		),
 	};
 };
@@ -196,14 +200,28 @@ const main = () => {
 
 	const observed = observe(name);
 	console.log(`What the account holds of ${name}:`, observed);
-	const steps = planDeploy(observed, { name, ...(tokens === undefined ? {} : { tokens }) });
+	const jwt = Object.fromEntries(
+		[
+			"LOOPBACK_JWKS_URL",
+			"LOOPBACK_JWT_ISSUER",
+			"LOOPBACK_JWT_AUDIENCE",
+			"LOOPBACK_SPACE_CLAIM",
+			"LOOPBACK_NAME_CLAIM",
+		].map((setting) => [setting, process.env[setting]]),
+	);
+	const steps = planDeploy(observed, { name, jwt, ...(tokens === undefined ? {} : { tokens }) });
 	console.log("The plan:");
 	for (const [index, step] of steps.entries()) console.log(`  ${index + 1}. ${describe(step)}`);
 	if (dryRun) return;
 
 	const generated = spawnSync("pnpm", ["generate"], { cwd: root, stdio: "inherit" });
 	if (generated.status !== 0) throw new Failed("Stopped: `pnpm generate` failed.");
-	for (const step of steps) run(step, name, secretsFile);
+	// Each step is checked against the account as it stands just before it runs, not as it was planned.
+	for (const [index, step] of steps.entries()) {
+		const refusal = refusalBefore(step, index === 0 ? observed : observe(name), name);
+		if (refusal !== undefined) throw new Failed(`Stopped before step ${index + 1}: ${refusal}`);
+		run(step, name, secretsFile);
+	}
 
 	const after = observe(name);
 	const wrong = !after.coreHoldsSpace

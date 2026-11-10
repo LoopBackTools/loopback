@@ -38,6 +38,27 @@ const transferred =
 		? { Space: exports.durableObject({ state: "transferred", transferredTo: `${name}-core` }) }
 		: undefined;
 
+/**
+ * Who may use this Loopback. Tokens, `LOOPBACK_TOKENS`, unless the deploy's environment sets
+ * `LOOPBACK_JWKS_URL`: then the JWT gate's settings, read from that environment on every deploy, as
+ * `LOOPBACK_PLAN` is. None of them is a secret.
+ */
+const JWT_SETTINGS = [
+	"LOOPBACK_JWKS_URL",
+	"LOOPBACK_JWT_ISSUER",
+	"LOOPBACK_JWT_AUDIENCE",
+	"LOOPBACK_SPACE_CLAIM",
+	"LOOPBACK_NAME_CLAIM",
+] as const;
+const gate = process.env["LOOPBACK_JWKS_URL"]
+	? Object.fromEntries(
+			JWT_SETTINGS.flatMap((setting) => {
+				const value = process.env[setting];
+				return value === undefined || value === "" ? [] : [[setting, bindings.text(value)]];
+			}),
+		)
+	: { LOOPBACK_TOKENS: bindings.secret() };
+
 export default defineConfig(({ mode }) => ({
 	worker: {
 		name: mode === CPU_CHECK ? `${name}-cpu-check` : name,
@@ -61,8 +82,9 @@ export default defineConfig(({ mode }) => ({
 		env: {
 			// The core, which holds every space and its images: deployed first, as loopback-core.
 			CORE: bindings.worker({ worker: `${name}-core`, exportName: "Core" }),
-			// Who may use this Loopback: {"<person>": "<token>"}, each token from `openssl rand -hex 32`.
-			LOOPBACK_TOKENS: bindings.secret(),
+			// Who may use this Loopback: {"<person>": "<token>"}, each token from `openssl rand -hex 32`,
+			// or the JWT gate's settings.
+			...gate,
 			LOOPBACK_PLAN: bindings.text(plan(mode)),
 			// Which deploy the edge is from, which it names on every answer.
 			CF_VERSION_METADATA: bindings.versionMetadata(),

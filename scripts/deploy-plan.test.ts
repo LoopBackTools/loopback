@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type Observed, planDeploy } from "./deploy-plan.ts";
+import { type Observed, planDeploy, refusalBefore } from "./deploy-plan.ts";
 
 /**
  * One deploy installs Loopback fresh, upgrades a 0.7 install by moving its spaces into the core, or
@@ -94,6 +94,21 @@ describe("a deploy's plan", () => {
 		});
 	});
 
+	it("resumes when the core lists the spaces it expects beside the edge, mid-transfer", () => {
+		const midTransfer: Observed = {
+			...from07,
+			coreExists: true,
+			coreHoldsSpace: true,
+			transferPending: true,
+			coreFilesBucket: "loopback-files",
+		};
+		expect(planDeploy(midTransfer, { tokens: TOKENS })).toEqual([
+			{ deploy: "edge", space: "transferred" },
+			{ deploy: "core", space: "created", filesBucket: "loopback-files" },
+			{ deploy: "edge", space: "none" },
+		]);
+	});
+
 	it("stops when both Workers hold the spaces, which no deploy leaves behind", () => {
 		expect(() => planDeploy({ ...on08, edgeHoldsSpace: true }, { tokens: TOKENS })).toThrow(
 			/Both loopback and loopback-core hold a Space namespace/,
@@ -133,5 +148,73 @@ describe("a deploy's tokens", () => {
 
 	it("takes new tokens over the edge's own", () => {
 		expect(planDeploy(on08, { tokens: TOKENS })).toHaveLength(2);
+	});
+});
+
+describe("a JWT-gated deploy", () => {
+	const jwt = {
+		LOOPBACK_JWKS_URL: "https://login.example.com/.well-known/jwks.json",
+		LOOPBACK_JWT_ISSUER: "https://login.example.com",
+		LOOPBACK_JWT_AUDIENCE: "https://loopback.example.com/mcp",
+		LOOPBACK_SPACE_CLAIM: "org_id",
+	};
+
+	it("needs no tokens", () => {
+		expect(planDeploy(nothing, { jwt })).toEqual([
+			{ deploy: "core", space: "created" },
+			{ deploy: "edge", space: "none" },
+		]);
+	});
+
+	it("names a setting the gate would need, as the gate would", () => {
+		const { LOOPBACK_JWT_ISSUER: _, ...incomplete } = jwt;
+		expect(() => planDeploy(nothing, { jwt: incomplete })).toThrow(
+			"LOOPBACK_JWT_ISSUER is not set; a JWT-gated deployment needs it.",
+		);
+	});
+
+	it("refuses tokens beside it, as the gate would", () => {
+		expect(() => planDeploy(nothing, { jwt, tokens: TOKENS })).toThrow(
+			/^Both LOOPBACK_TOKENS and LOOPBACK_JWKS_URL are set\./,
+		);
+		expect(() => planDeploy(on08, { jwt })).toThrow(
+			/^Both LOOPBACK_TOKENS and LOOPBACK_JWKS_URL are set\..*cf workers secrets delete/s,
+		);
+	});
+});
+
+describe("each step, checked against the account just before it runs", () => {
+	it("never deploys the edge without its spaces while it still holds them", () => {
+		expect(refusalBefore({ deploy: "edge", space: "none" }, from07, "loopback")).toMatch(
+			/loopback still holds the spaces/,
+		);
+		expect(refusalBefore({ deploy: "edge", space: "none" }, on08, "loopback")).toBeUndefined();
+	});
+
+	it("never creates the core's spaces while the edge still holds them", () => {
+		expect(refusalBefore({ deploy: "core", space: "created" }, from07, "loopback")).toMatch(
+			/loopback still holds the spaces/,
+		);
+		expect(
+			refusalBefore({ deploy: "core", space: "created" }, nothing, "loopback"),
+		).toBeUndefined();
+	});
+
+	it("hands the spaces over only once the core expects them", () => {
+		const handOver = { deploy: "edge", space: "transferred" } as const;
+		expect(refusalBefore(handOver, from07, "loopback")).toMatch(/loopback-core isn't expecting/);
+		expect(
+			refusalBefore(handOver, { ...from07, coreExists: true, transferPending: true }, "loopback"),
+		).toBeUndefined();
+	});
+
+	it("asks the core to expect the spaces only while the edge holds them", () => {
+		const expecting = {
+			deploy: "core",
+			space: "expecting-transfer",
+			filesBucket: "loopback-files",
+		} as const;
+		expect(refusalBefore(expecting, on08, "loopback")).toMatch(/loopback holds no spaces/);
+		expect(refusalBefore(expecting, from07, "loopback")).toBeUndefined();
 	});
 });

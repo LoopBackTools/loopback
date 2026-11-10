@@ -1,4 +1,11 @@
-import { NO_TOKENS, OLD_TOKEN, readTokens } from "../apps/loopback/src/edge/tokens.ts";
+import {
+	BOTH_GATES,
+	JWT_REQUIRED,
+	missingJwtSetting,
+	NO_TOKENS,
+	OLD_TOKEN,
+	readTokens,
+} from "../apps/loopback/src/edge/tokens.ts";
 
 /**
  * What a deploy does, from what the account holds. Pure: `scripts/deploy.ts` observes, this decides.
@@ -34,6 +41,11 @@ export interface Given {
 	readonly name?: string;
 	/** `LOOPBACK_TOKENS` from the secrets file, when it carries it. */
 	readonly tokens?: string;
+	/**
+	 * The JWT gate's settings, from the environment the deploy runs in, for an edge behind a login
+	 * instead of tokens: `LOOPBACK_JWKS_URL` and the others, as `apps/loopback`'s config reads them.
+	 */
+	readonly jwt?: Readonly<Record<string, string | undefined>>;
 }
 
 /** One deploy of one Worker, with the state its `Space` export is declared in. */
@@ -59,14 +71,26 @@ export class Refused extends Error {
  */
 export const planDeploy = (observed: Observed, given: Given): readonly Step[] => {
 	const name = given.name ?? "loopback";
-	if (given.tokens !== undefined) {
+	const jwt = given.jwt ?? {};
+	const set = (setting: string) => (jwt[setting] ?? "") !== "";
+	if (set("LOOPBACK_JWKS_URL")) {
+		if (given.tokens !== undefined) throw new Refused(BOTH_GATES);
+		if (observed.edgeSecrets.includes("LOOPBACK_TOKENS")) {
+			throw new Refused(
+				`${BOTH_GATES} ${name} still has LOOPBACK_TOKENS: delete it with \`cf workers secrets delete LOOPBACK_TOKENS --worker ${name}\` to move it behind your login.`,
+			);
+		}
+		const missing = JWT_REQUIRED.find((setting) => !set(setting));
+		if (missing !== undefined) throw new Refused(missingJwtSetting(missing));
+	} else if (given.tokens !== undefined) {
 		const tokens = readTokens(given.tokens);
 		if ("problem" in tokens) throw new Refused(tokens.problem);
 	} else if (!observed.edgeSecrets.includes("LOOPBACK_TOKENS")) {
 		throw new Refused(observed.edgeSecrets.includes("LOOPBACK_TOKEN") ? OLD_TOKEN : NO_TOKENS);
 	}
 
-	if (observed.edgeHoldsSpace && observed.coreHoldsSpace) {
+	// Mid-transfer, the core may list the namespace it expects beside the edge that still holds it.
+	if (observed.edgeHoldsSpace && observed.coreHoldsSpace && !observed.transferPending) {
 		throw new Refused(
 			`Both ${name} and ${name}-core hold a Space namespace, which no deploy leaves behind. Stop, and report it with the output of \`cf durable-objects namespaces list\`.`,
 		);
@@ -87,4 +111,27 @@ export const planDeploy = (observed: Observed, given: Given): readonly Step[] =>
 	return observed.transferPending
 		? [handOver, ...finish]
 		: [core("expecting-transfer"), handOver, ...finish];
+};
+
+/**
+ * Why a step must not run, read from the account just before it does, or nothing when it may: each
+ * step's precondition, so a deploy that observed wrongly, or that something changed under, stops
+ * rather than drops the spaces.
+ */
+export const refusalBefore = (step: Step, observed: Observed, name: string): string | undefined => {
+	const stillHeld = `${name} still holds the spaces, so this step would leave them behind. Stop, and report it with the output of \`cf durable-objects namespaces list\`.`;
+	if (step.deploy === "edge" && step.space === "none") {
+		return observed.edgeHoldsSpace ? stillHeld : undefined;
+	}
+	if (step.deploy === "core" && step.space === "created") {
+		return observed.edgeHoldsSpace ? stillHeld : undefined;
+	}
+	if (step.deploy === "edge") {
+		return observed.edgeHoldsSpace && observed.transferPending
+			? undefined
+			: `${name}-core isn't expecting ${name}'s spaces, so handing them over would fail. Stop, and report it.`;
+	}
+	return observed.edgeHoldsSpace
+		? undefined
+		: `${name} holds no spaces for ${name}-core to expect. Stop, and report it.`;
 };

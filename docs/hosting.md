@@ -11,18 +11,16 @@ Loopback ships no login of its own. People sign in to yours; Loopback checks wha
 
 ## Point Loopback at your login
 
-The JWT gate is chosen by its settings. None of them is a secret, so declare them as text in
-`apps/loopback/cloudflare.config.ts`, in place of `LOOPBACK_TOKENS`:
+The JWT gate is chosen by its settings. None of them is a secret: set them in the environment of
+every deploy, as you would `LOOPBACK_PLAN`, in place of `LOOPBACK_TOKENS`, and the edge declares them
+as plain text:
 
-```ts
-env: {
-	CORE: bindings.worker({ worker: `${name}-core`, exportName: "Core" }),
-	CF_VERSION_METADATA: bindings.versionMetadata(),
-	LOOPBACK_JWKS_URL: bindings.text("https://login.example.com/.well-known/jwks.json"),
-	LOOPBACK_JWT_ISSUER: bindings.text("https://login.example.com"),
-	LOOPBACK_JWT_AUDIENCE: bindings.text("https://loopback.example.com/mcp"),
-	LOOPBACK_SPACE_CLAIM: bindings.text("org_id"),
-},
+```sh
+LOOPBACK_JWKS_URL=https://login.example.com/.well-known/jwks.json \
+LOOPBACK_JWT_ISSUER=https://login.example.com \
+LOOPBACK_JWT_AUDIENCE=https://loopback.example.com/mcp \
+LOOPBACK_SPACE_CLAIM=org_id \
+pnpm run deploy
 ```
 
 | Setting                 | What it is                                                                       |
@@ -33,8 +31,9 @@ env: {
 | `LOOPBACK_SPACE_CLAIM`  | The claim that names the space a token opens: an organisation or workspace id.   |
 | `LOOPBACK_NAME_CLAIM`   | Optional. The claim holding the person's display name; `name` unless you say so. |
 
-Set either `LOOPBACK_TOKENS` or the JWT settings, never both: a deployment with both, or neither,
-answers every request with a 500 that says which to set.
+Set either `LOOPBACK_TOKENS` or the JWT settings, never both: the deploy refuses both, or a JWT
+setting missing, before it deploys anything, with the words the edge would answer with. An edge
+moving from tokens to a login has its `LOOPBACK_TOKENS` secret deleted first; the deploy says how.
 
 Keep `CF_VERSION_METADATA` in both Workers, under that name. For a while after a deploy, a space can
 go on running the code it started with while the new core calls it; with the core's version to

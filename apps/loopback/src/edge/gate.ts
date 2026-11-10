@@ -2,7 +2,7 @@ import { Config, Context, Data, Effect, Layer, Option, Redacted } from "effect";
 import { createRemoteJWKSet, errors, jwtVerify } from "jose";
 import { z } from "zod";
 import { NotConfigured } from "./problems.ts";
-import { NO_TOKENS, OLD_TOKEN, readTokens } from "./tokens.ts";
+import { BOTH_GATES, missingJwtSetting, NO_TOKENS, OLD_TOKEN, readTokens } from "./tokens.ts";
 
 /** Who a request is from, and which space it opens: the caller the core is told about. */
 export interface Access {
@@ -208,8 +208,7 @@ const required = (name: string) =>
 	setting(name).pipe(
 		Effect.flatMap(
 			Option.match({
-				onNone: () =>
-					Effect.die(new NotConfigured(`${name} is not set; a JWT-gated deployment needs it.`)),
+				onNone: () => Effect.die(new NotConfigured(missingJwtSetting(name))),
 				onSome: Effect.succeed,
 			}),
 		),
@@ -244,9 +243,7 @@ export const ConfiguredGate = Layer.effect(
 				const tokens = yield* setting("LOOPBACK_TOKENS");
 				const jwks = yield* setting("LOOPBACK_JWKS_URL");
 				if (Option.isSome(tokens) && Option.isSome(jwks)) {
-					return yield* refuse(
-						"Both LOOPBACK_TOKENS and LOOPBACK_JWKS_URL are set. Set one: tokens for a single space, or the JWT settings for a space per tenant.",
-					);
+					return yield* refuse(BOTH_GATES);
 				}
 				if (Option.isSome(jwks)) return makeJwtGate(yield* configuredJwtOptions);
 				return yield* makeTokensGate;

@@ -229,8 +229,9 @@ by an OpenAPI document, served at `/api/v1/openapi.json`, for clients in any lan
 ## Bring your own login
 
 Instead of tokens, the edge can take JWTs from any login that issues them: Cloudflare Access, your
-own, Better Auth, Auth0, WorkOS or Clerk. Set `LOOPBACK_JWKS_URL` and the other JWT settings in place
-of `LOOPBACK_TOKENS`, and agents sign in with OAuth, with no token to configure.
+own, Better Auth, Auth0, WorkOS or Clerk. Set `LOOPBACK_JWKS_URL` and the other JWT settings in the
+environment of every deploy, in place of `LOOPBACK_TOKENS`, and agents sign in with OAuth, with no
+token to configure.
 [`docs/hosting.md`](docs/hosting.md) explains the settings.
 
 ## Hosting for many people
