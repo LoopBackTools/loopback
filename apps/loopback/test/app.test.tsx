@@ -58,6 +58,15 @@ describe("the self-hosted app", () => {
 		expect(seen.find((call) => call.url.endsWith("/whoami"))?.authorization).toBeNull();
 	});
 
+	it("asks for the person's own token from LOOPBACK_TOKENS", async () => {
+		serving({ vouched: false });
+		open("/", null);
+		expect(await screen.findByLabelText("Token")).toBeInTheDocument();
+		expect(
+			screen.getByText(/Your own token, from LOOPBACK_TOKENS when Loopback was deployed\./),
+		).toBeInTheDocument();
+	});
+
 	it("takes the token, opens the ask a link named, and forgets the token on signing out", async () => {
 		const user = userEvent.setup();
 		serving({ vouched: false });

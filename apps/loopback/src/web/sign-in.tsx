@@ -81,7 +81,7 @@ export function SignIn() {
 					Sign in
 				</Button>
 				<p className="pt-5 text-[15px] leading-[22px] text-kumo-subtle">
-					It's the LOOPBACK_TOKEN you set when you deployed. It stays in this browser.
+					Your own token, from LOOPBACK_TOKENS when Loopback was deployed. It stays in this browser.
 				</p>
 			</form>
 		</main>
