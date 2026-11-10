@@ -1,6 +1,7 @@
 import type {
 	Actor,
 	Ask,
+	AskKind,
 	AskPage,
 	BriefingAnswerInput,
 	BriefingInput,
@@ -155,20 +156,29 @@ export interface Replied {
 	readonly message: string;
 }
 
+/**
+ * The ask an outcome is about: its id, its kind, and the client that opened it when it said, which
+ * may not be the one calling, so an edge can record what agents do without reading the ask again.
+ */
+export interface AskNamed {
+	readonly askId: string;
+	readonly kind: AskKind;
+	readonly client?: string;
+}
+
 /** What an agent's ask, or its next move on one, comes to. */
 export type AskOutcome =
 	/** No wait was given: the agent follows the reply as a task, `<askId>:<turn>`. */
-	| {
+	| ({
 			readonly outcome: "started";
 			readonly taskId: string;
-			readonly askId: string;
 			readonly turn: number;
 			readonly at: string;
-	  }
+	  } & AskNamed)
 	/** The person replied while the call waited. */
-	| ({ readonly outcome: "replied" } & Replied)
+	| ({ readonly outcome: "replied" } & Replied & AskNamed)
 	/** The wait ran out, or its caller went: calling again with the same input rejoins the ask. */
-	| { readonly outcome: "waiting"; readonly askId: string; readonly message: string }
+	| ({ readonly outcome: "waiting"; readonly message: string } & AskNamed)
 	/**
 	 * The space would not take it, and says why, with the status and problem code the contract
 	 * answers a refused agent operation with: 404 for no such ask, 409 for an ask that is closed or

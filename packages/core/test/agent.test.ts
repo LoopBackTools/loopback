@@ -86,6 +86,7 @@ describe("the agent's operations, through the binding", () => {
 		expect(await review).toEqual({
 			outcome: "replied",
 			askId,
+			kind: "review",
 			reply: { outcome: "changes_requested", feedback: "Warmer, please." },
 			message: `Changes requested: Warmer, please.\n\nRevise the work, then call request_review again with revises: "${askId}".`,
 		});
@@ -109,9 +110,37 @@ describe("the agent's operations, through the binding", () => {
 		expect(await answering).toEqual({
 			outcome: "replied",
 			askId,
+			kind: "review",
 			reply: { outcome: "approved", note: "Fine" },
 			message: "Approved, with a note: Fine",
 		});
+	});
+
+	it("names the ask's kind, and the client that opened it, with every outcome", async () => {
+		const caller = callerIn(crypto.randomUUID());
+		const opened = await core().askQuestion(caller, colour, "claude-code 2.1.0");
+		expect(opened).toMatchObject({
+			outcome: "started",
+			kind: "question",
+			client: "claude-code 2.1.0",
+		});
+		if (opened.outcome !== "started") throw new Error(opened.outcome);
+		await reply(caller, opened.askId, { outcome: "follow_up", question: "Why?" });
+		const answering = core().answerFollowUp(
+			caller,
+			{ askId: opened.askId, answer: "Because." },
+			waiting(),
+		);
+		await theirTurn(caller, opened.askId, 2);
+		await reply(caller, opened.askId, { outcome: "answered", selected: ["Red"] });
+		expect(await answering).toMatchObject({
+			outcome: "replied",
+			kind: "question",
+			client: "claude-code 2.1.0",
+		});
+		const briefing = await core().sendBriefing(caller, storage, undefined, waiting(300));
+		expect(briefing).toMatchObject({ outcome: "waiting", kind: "briefing" });
+		expect(briefing).not.toHaveProperty("client");
 	});
 
 	it("starts an answer to a follow-up as a task on the agent's turn", async () => {

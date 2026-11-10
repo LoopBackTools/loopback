@@ -44,9 +44,21 @@ const refused = (
 const invalid = (error: ContentInvalid) =>
 	Effect.succeed(refused(422, "content.invalid", error.reason));
 
-const notYet = (tool: Tool, askId: string): AskOutcome => ({
+/** The ask an outcome is about: its id, its kind, and the client that opened it, when it said. */
+interface About {
+	readonly askId: string;
+	readonly kind: Ask["kind"];
+	readonly client?: string;
+}
+
+const aboutOf = (ask: Ask): About =>
+	ask.client === undefined
+		? { askId: ask.id, kind: ask.kind }
+		: { askId: ask.id, kind: ask.kind, client: ask.client };
+
+const notYet = (tool: Tool, about: About): AskOutcome => ({
 	outcome: "waiting",
-	askId,
+	...about,
 	message: noReplyYet(tool),
 });
 
@@ -98,12 +110,13 @@ const RECONNECTS = 8;
 const replyTo = (
 	caller: Caller,
 	space: SpaceClient,
-	askId: string,
+	about: About,
 	turn: number,
 	tool: Tool,
 	wait: Wait,
 ): Effect.Effect<AskOutcome, never, Spaces> =>
 	Effect.gen(function* () {
+		const { askId } = about;
 		const spaces = yield* Spaces;
 		const until = Date.now() + wait.budgetMs;
 		let step = 0;
@@ -114,7 +127,7 @@ const replyTo = (
 					const waiter = yield* spaces.wait(caller.space, askId, turn);
 					for (;;) {
 						const left = until - Date.now();
-						if (left <= 0) return notYet(tool, askId);
+						if (left <= 0) return notYet(tool, about);
 						const lap = step;
 						yield* Effect.tryPromise({
 							try: () => wait.progress(lap),
@@ -134,6 +147,7 @@ const replyTo = (
 							yield* space.markDelivered(askId, delivery.seq);
 							const outcome: AskOutcome = {
 								outcome: "replied",
+								...about,
 								...replied(delivery, yield* briefingFor(space, delivery)),
 							};
 							return outcome;
@@ -149,7 +163,7 @@ const replyTo = (
 			yield* Effect.sleep(Math.min(100 * 2 ** (drops - 1), 5_000) * (0.5 + Math.random()));
 		}
 	}).pipe(
-		Effect.catchTag("CallerLeft", () => Effect.succeed(notYet(tool, askId))),
+		Effect.catchTag("CallerLeft", () => Effect.succeed(notYet(tool, about))),
 		Effect.catchTag("AskNotFound", Effect.die),
 	);
 
@@ -158,14 +172,20 @@ const settle = (
 	tool: Tool,
 	caller: Caller,
 	space: SpaceClient,
-	askId: string,
+	ask: Ask,
 	turn: number,
 	at: string,
 	wait: Wait | undefined,
 ): Effect.Effect<AskOutcome, never, Spaces> =>
 	wait === undefined
-		? Effect.succeed({ outcome: "started", taskId: taskIdOf(askId, turn), askId, turn, at })
-		: replyTo(caller, space, askId, turn, tool, wait);
+		? Effect.succeed({
+				outcome: "started",
+				taskId: taskIdOf(ask.id, turn),
+				...aboutOf(ask),
+				turn,
+				at,
+			})
+		: replyTo(caller, space, aboutOf(ask), turn, tool, wait);
 
 const spaceOf = (caller: Caller) =>
 	Effect.gen(function* () {
@@ -189,7 +209,7 @@ const opened = (
 	Effect.gen(function* () {
 		const space = yield* spaceOf(caller);
 		const ask = yield* open(space);
-		return yield* settle(tool, caller, space, ask.id, ...latestTurn(ask), wait);
+		return yield* settle(tool, caller, space, ask, ...latestTurn(ask), wait);
 	}).pipe(Effect.catchTag("ContentInvalid", invalid));
 
 export const askQuestion = (
@@ -240,7 +260,7 @@ export const answerFollowUp = (caller: Caller, input: FollowUpInput, wait: Wait 
 			"answer_follow_up",
 			caller,
 			space,
-			ask.id,
+			ask,
 			ask.thread.length,
 			answer?.at ?? ask.updatedAt,
 			wait,
@@ -278,7 +298,7 @@ export const answerBriefing = (
 			"answer_briefing",
 			caller,
 			space,
-			ask.id,
+			ask,
 			turn,
 			answer?.at ?? ask.updatedAt,
 			wait,
