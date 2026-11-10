@@ -1,4 +1,6 @@
 import type { BriefingInput, QuestionInput, Reply, ReviewInput } from "@loopbacktools/protocol";
+import { abortAllDurableObjects, runInDurableObject } from "cloudflare:test";
+import { exports } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import type { Caller, Wait } from "../src/rpc.ts";
 import { core } from "./binding.ts";
@@ -341,6 +343,41 @@ describe("the agent's operations, through the binding", () => {
 			outcome: "replied",
 			askId: gone.askId,
 			reply: { outcome: "answered", selected: [], text: "Yes" },
+		});
+	});
+
+	it("carries a wait through a restart of its space", async () => {
+		const caller = callerIn(crypto.randomUUID());
+		const call = core().askQuestion(caller, colour, undefined, waiting());
+		const askId = await openedIn(caller);
+		await pause(300);
+		// In-memory state gone and every socket dropped: the wait reconnects and carries on.
+		await abortAllDurableObjects();
+		await pause(300);
+		await reply(caller, askId, { outcome: "answered", selected: [], text: "Made it" });
+		expect(await call).toMatchObject({
+			outcome: "replied",
+			askId,
+			reply: { outcome: "answered", selected: [], text: "Made it" },
+		});
+	});
+
+	it("carries a wait through its space moving onto new code", async () => {
+		const caller = callerIn(crypto.randomUUID());
+		const call = core().askQuestion(caller, colour, undefined, waiting());
+		const askId = await openedIn(caller);
+		await pause(300);
+		await runInDurableObject(exports.Space.getByName(caller.space), (_object, state) => {
+			for (const socket of state.getWebSockets(`wait:${askId}`)) {
+				socket.close(1012, "Loopback was updated.");
+			}
+		});
+		await pause(300);
+		await reply(caller, askId, { outcome: "answered", selected: [], text: "Still here" });
+		expect(await call).toMatchObject({
+			outcome: "replied",
+			askId,
+			reply: { outcome: "answered", selected: [], text: "Still here" },
 		});
 	});
 
