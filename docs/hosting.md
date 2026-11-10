@@ -85,113 +85,14 @@ Behind a login, compose [`@loopbacktools/app`](../packages/app/README.md) with y
 workspaces, giving each workspace a client from [`@loopbacktools/sdk`](../packages/sdk/README.md)
 whose `token` is a function that returns a fresh JWT; the SDK calls it for every request.
 
-## Compose Loopback in your own Worker
+## Bring your own edge
 
-A service that wraps Loopback (adding its own routes, billing or limits) imports the server and
-composes it with its own layers. The `Space` class must be exported beside the handler:
-
-```ts
-import { createLoopback, Declined, jwtGate, Spaces } from "@loopbacktools/server";
-import { Effect, Layer } from "effect";
-
-export { Space } from "@loopbacktools/server";
-
-// Wrap the spaces to meter what tenants open, or decline it with a reason the agent is shown.
-// `overLimit` stands for your own check against the tenant's plan.
-const limited = Layer.effect(
-	Spaces,
-	Effect.gen(function* () {
-		const spaces = yield* Spaces;
-		return Spaces.of({
-			...spaces,
-			of: (access) => {
-				const space = spaces.of(access);
-				return {
-					...space,
-					open: (request) =>
-						overLimit(access.space)
-							? Effect.fail(new Declined({ reason: "This month's asks are used. Upgrade at …" }))
-							: space.open(request),
-				};
-			},
-		});
-	}),
-).pipe(Layer.provide(Spaces.layer));
-
-const loopback = createLoopback({
-	// The key set fetched through a service binding to the login, rather than over the internet.
-	gate: jwtGate((env) => ({
-		jwksUrl: "https://login.example.com/.well-known/jwks.json",
-		fetcher: env.AUTH as Fetcher,
-		issuer: "https://login.example.com",
-		audience: ["https://app.example.com", "https://app.example.com/mcp"],
-		spaceClaim: "workspace",
-		// Asked after each token verifies: return a reason to turn the caller away, or nothing.
-		// `isMember` stands for your own lookup, which should be cached.
-		check: async (_claims, access) =>
-			(await isMember(access.actor.id, access.space))
-				? undefined
-				: "You are no longer a member of this workspace.",
-	})),
-	spaces: limited,
-	// Where `open_inbox` sends people, when your frontend is not this Worker's own inbox.
-	inboxUrl: ({ origin, space, askId }) =>
-		`${origin}/w/${space}${askId === undefined ? "" : `/asks/${askId}`}`,
-});
-```
-
-Route `/api/v1/*`, `/mcp`, `/.well-known/oauth-protected-resource*` and `/llms.txt` to
-`loopback.fetch`. Only
-`open` and `createUpload` may be declined; the agent receives the reason as its tool's error.
-
-A JWT outlives whatever it was issued on: a membership, or an agent's grant. `check` is where a
-login that can take those back says so, before the token's expiry. It sees every claim, such as the
-OAuth client a token was issued to. A check that throws fails the request with a 500, as an
-unreachable key set does, since the caller is not at fault.
-
-To remove a tenant, `eraseSpace(env, space)` deletes everything its space holds: asks, threads,
-tickets, and the files its uploads stored. Inboxes watching it are closed, and the space carries on
-empty. Running it again finishes what a failed run left.
-
-Another Worker on the same account can also vouch for a caller without any token, by invoking
-Loopback through a service binding with `props.loopback = { space, actor: { id, name? } }`. Only code
-deployed on the account can set props, and props that say anything else are refused with a 500.
-
-## Limit each space's requests
-
-`limits` decides whether each request goes on, once its caller is known: the API, the inbox's socket
-and MCP alike. `rateLimit` counts each space's requests with a Cloudflare
-[Rate Limiting binding](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/):
-
-```ts
-import { createLoopback, jwtGate, rateLimit } from "@loopbacktools/server";
-
-const loopback = createLoopback({
-	gate: jwtGate((env: Env) => ({/* as above */})),
-	// `retryAfter` is the binding's period: the binding doesn't say when its count resets.
-	limits: rateLimit((env: Env) => ({ limiter: env.LOOPBACK_LIMIT, retryAfter: 60 })),
-});
-```
-
-```jsonc
-// wrangler.jsonc. The namespace id is yours to choose, and unique across the account.
-"ratelimits": [
-	{ "name": "LOOPBACK_LIMIT", "namespace_id": "1001", "simple": { "limit": 1500, "period": 60 } },
-],
-```
-
-A refused caller gets a 429 with `Retry-After`. The API answers with the problem
-`request.rate_limited`; MCP answers with a JSON-RPC error, which the client shows its agent. Size the
-limit for agents waiting on replies: each polls its task every 2 seconds for the first two minutes,
-so ten waiting at once make about 300 requests a minute.
-
-The binding counts per Cloudflare location, and approximately: it sheds floods, not exact quotas. For
-an allowance such as a month's asks, wrap the spaces as above. A binding that fails lets the request
-through, and logs it.
-
-Limits of your own in front of Loopback, per IP say, can refuse the same way with
-`tooManyRequests(request, retryAfter, message)`. It is also exported on its own, from
-`@loopbacktools/server/limits`, which doesn't load the Workers runtime.
+A service that wraps Loopback, adding its own routes, billing or limits, writes its own edge in front
+of the core rather than composing a server. It deploys the core as it is, from
+[`@loopbacktools/core`](../packages/core), binds it as `CORE`, compiles
+`@loopbacktools/protocol`'s spec with `typespec-hono` and `typespec-http-mcp`, and calls the core's
+RPC, `@loopbacktools/core/rpc`, with its own gate, limits and metering around each call.
+[`apps/loopback`](../apps/loopback) is the edge this repository deploys, and the one to start from.
 
 ## Upgrading
 

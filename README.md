@@ -200,15 +200,15 @@ pnpm format           # oxfmt
 pnpm generate         # regenerate the API from its TypeSpec definition
 ```
 
-| Path                       | What it is                                                                                    |
-| -------------------------- | --------------------------------------------------------------------------------------------- |
-| `packages/protocol`        | The API contract, in TypeSpec, and what is generated from it: types and the OpenAPI document. |
-| `packages/server`          | The server: Durable Object, HTTP API, event socket and MCP tools, written in Effect.          |
-| `packages/sdk`             | A client for building your own inbox, in any framework.                                       |
-| `packages/inbox`           | The web inbox as React components, built on the SDK.                                          |
-| `packages/app`             | The web app around the inbox, for a deployment to compose with its own sign-in.               |
-| `apps/loopback`            | The deployable Worker, and the app it serves, signed in with the deployment's token.          |
-| `integrations/claude-code` | The Claude Code plugin.                                                                       |
+| Path                       | What it is                                                                                       |
+| -------------------------- | ------------------------------------------------------------------------------------------------ |
+| `packages/protocol`        | The API contract, in TypeSpec, and what is generated from it: types and the OpenAPI document.    |
+| `packages/core`            | The core: the `Space` Durable Object, stored images, and the RPC an edge calls, in Effect.       |
+| `packages/sdk`             | A client for building your own inbox, in any framework.                                          |
+| `packages/inbox`           | The web inbox as React components, built on the SDK.                                             |
+| `packages/app`             | The web app around the inbox, for a deployment to compose with its own sign-in.                  |
+| `apps/loopback`            | The deployable edge, generated from the contract, in front of the core, and the inbox it serves. |
+| `integrations/claude-code` | The Claude Code plugin.                                                                          |
 
 ## Contributing
 

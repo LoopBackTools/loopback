@@ -42,8 +42,7 @@ consistent, structured way to reply, where each point keeps its own thread.
 
 ## Constraints
 
-- **Additive only.** Separate work is building the hosted product on `@loopbacktools/server`. This
-  must not change the gate, `Spaces`, `Declinable`, hosting, or the shape of anything that exists,
+- **Additive only.** This must not change the gate, `Spaces`, `Declinable`, hosting, or the shape of anything that exists,
   apart from new union members and new optional fields. Opening a
   briefing goes through the existing `open` operation, so a host that meters or declines opens
   covers briefings without changes. A host whose frontend switches on `ask.kind` or

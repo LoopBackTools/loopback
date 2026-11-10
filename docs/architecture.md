@@ -56,17 +56,11 @@ one of the login's keys opens the space a configured claim names, as the person 
 clients discover the login through the gate's `authorizationServers`. One deployment then serves
 every tenant, each in its own Durable Object. [`hosting.md`](hosting.md) explains how to set it up.
 
-Before the gate, the Worker believes its **invoker**. Another Worker on the account that invokes it
-through a service binding may vouch for the caller by passing `props.loopback`,
-`{ space, actor: { id, name? } }`. Only code deployed on the account can set props, so nothing on the
-network can forge them and no secret is shared. Props that say anything else are a misconfigured
-invoker, refused with a 500: never a reason to fall back to the gate.
-
-A host that wraps Loopback composes `@loopbacktools/server` with its own layers: its gate, and a wrapping
-of `Spaces` that can meter what tenants open, or decline an ask or upload with a reason the agent is
-shown. The server's layering keeps that possible: the domain knows nothing else, the core (the
-`Space` object and its operations) knows only the domain, and an architecture suite fails the build
-if either reaches into the edge.
+A host builds its own edge in front of the core rather than wrapping a server: it calls the core's
+RPC, `@loopbacktools/core/rpc`, with its own gate, limits and metering around each call. The layering
+keeps that possible: the domain knows nothing else, the space (the `Space` object and its
+operations) knows only the domain, the core knows no edge, and architecture suites fail the build if
+any of it reaches outward.
 
 ## The contract
 
@@ -74,7 +68,7 @@ if either reaches into the edge.
 operations a frontend uses, the frames the event socket sends, and the inputs and results of the
 MCP tools. One `pnpm generate` produces, from it:
 
-- the Hono routes and zod validators the server mounts (`packages/server/src/generated`);
+- the Hono routes, MCP tools and zod validators each edge compiles for itself (`apps/loopback/src/generated`);
 - framework-free types for clients (`packages/protocol/src/generated`);
 - the OpenAPI document, served at `/api/v1/openapi.json`.
 
