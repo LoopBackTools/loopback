@@ -49,11 +49,12 @@ export class Spaces extends Context.Service<
 >()("loopback/Spaces") {
 	/**
 	 * The core's `Space` objects, called as code of `version`, so a space still on older code knows
-	 * to restart.
+	 * to restart. `namespace` is read at every use, never once: a core created seconds ago can run
+	 * before its `Space` class is bound, and a runtime built then must reach it once it is.
 	 */
-	static readonly layer = (spaces: DurableObjectNamespace<Space>, version: Version) =>
+	static readonly layer = (namespace: () => DurableObjectNamespace<Space>, version: Version) =>
 		Layer.sync(Spaces, () => {
-			const stubOf = (space: string) => spaces.getByName(space);
+			const stubOf = (space: string) => namespace().getByName(space);
 			/** A request to a space, named by this code alone, whatever it brought with it. */
 			const named = (request: Request) => {
 				const copy = new Request(request);
@@ -64,19 +65,21 @@ export class Spaces extends Context.Service<
 			};
 			return Spaces.of({
 				of: (space) => spaceClient(() => stubOf(space), version),
-				idOf: (space) => spaces.idFromName(space).toString(),
+				idOf: (space) => namespace().idFromName(space).toString(),
 				byId: (spaceId) => {
 					if (!/^[0-9a-f]{64}$/.test(spaceId)) return Option.none();
 					try {
-						const id = spaces.idFromString(spaceId);
-						return Option.some(spaceClient(() => spaces.get(id), version));
+						const id = namespace().idFromString(spaceId);
+						return Option.some(spaceClient(() => namespace().get(id), version));
 					} catch {
 						// A well-formed id this namespace did not mint.
 						return Option.none();
 					}
 				},
 				connect: (spaceId, request) =>
-					Effect.promise(() => spaces.get(spaces.idFromString(spaceId)).fetch(named(request))),
+					Effect.promise(() =>
+						namespace().get(namespace().idFromString(spaceId)).fetch(named(request)),
+					),
 				wait: (space, askId, afterSeq) =>
 					Effect.acquireRelease(
 						Effect.gen(function* () {

@@ -24,7 +24,8 @@ type CoreRuntime = ManagedRuntime.ManagedRuntime<CoreServices, never>;
 
 /**
  * The Worker's `Space` class, as the runtime binds every Durable Object class a Worker exports: no
- * binding names the Worker, so a core deployed under any name reaches its own.
+ * binding names the Worker, so a core deployed under any name reaches its own. Read at every use:
+ * on a core created seconds ago it can be undefined at first.
  */
 const namespace = (): DurableObjectNamespace<Space> =>
 	(exports as unknown as { readonly Space: DurableObjectNamespace<Space> }).Space;
@@ -40,7 +41,7 @@ const runtimeOf = (env: CoreBindings): CoreRuntime => {
 	if (runtime === undefined) {
 		runtime = ManagedRuntime.make(
 			Layer.mergeAll(
-				Spaces.layer(namespace(), { revision: REVISION, build: buildOf(env) }),
+				Spaces.layer(namespace, { revision: REVISION, build: buildOf(env) }),
 				Files.layer(env.FILES),
 				Logger.layer([Logger.consoleJson]),
 			),
