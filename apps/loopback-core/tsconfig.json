@@ -4,5 +4,5 @@
 		// cloudflare.config.ts reads its settings from the environment it is deployed from.
 		"types": ["node"]
 	},
-	"include": ["src", "cloudflare.config.ts", ".cloudflare/types"]
+	"include": ["src", "cloudflare.config.ts", "vite.config.ts", ".cloudflare/types"]
 }

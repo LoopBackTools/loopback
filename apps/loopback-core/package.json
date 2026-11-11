@@ -12,6 +12,7 @@
 	},
 	"type": "module",
 	"scripts": {
+		"build": "cf build",
 		"deploy": "cf deploy",
 		"types": "cf workers types",
 		"typecheck": "pnpm types && tsc --noEmit"
@@ -20,8 +21,10 @@
 		"@loopbacktools/core": "workspace:*"
 	},
 	"devDependencies": {
+		"@cloudflare/vite-plugin": "catalog:",
 		"@types/node": "catalog:",
 		"cf": "catalog:",
-		"typescript": "catalog:"
+		"typescript": "catalog:",
+		"vite": "catalog:"
 	}
 }
