@@ -35,6 +35,27 @@ export interface Observed {
 	readonly edgeSecrets: readonly string[];
 }
 
+/**
+ * The bucket a version binds as `FILES`, if it binds one, from the version as
+ * `cf workers versions get` prints it: its bindings at the top level.
+ */
+export const filesBucketOf = (version: Record<string, unknown> | undefined): string | undefined => {
+	const bindings = Array.isArray(version?.["bindings"])
+		? (version["bindings"] as readonly Record<string, unknown>[])
+		: [];
+	const files = bindings.find(
+		(binding) => binding["name"] === "FILES" && binding["type"] === "r2_bucket",
+	);
+	return typeof files?.["bucket_name"] === "string" ? files["bucket_name"] : undefined;
+};
+
+/** The tag this script gave a version, if it gave it one. */
+export const tagOfVersion = (version: Record<string, unknown> | undefined): string | undefined => {
+	const annotations = version?.["annotations"] as Record<string, unknown> | undefined;
+	const tag = annotations?.["workers/tag"];
+	return typeof tag === "string" ? tag : undefined;
+};
+
 /** What the person deploying gave. */
 export interface Given {
 	/** The deployment's name: the edge's Worker, and `<name>-core`. `loopback` unless said otherwise. */

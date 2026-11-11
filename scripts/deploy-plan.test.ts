@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { type Observed, planDeploy, refusalBefore } from "./deploy-plan.ts";
+import {
+	filesBucketOf,
+	type Observed,
+	planDeploy,
+	refusalBefore,
+	tagOfVersion,
+} from "./deploy-plan.ts";
 
 /**
  * One deploy installs Loopback fresh, upgrades a 0.7 install by moving its spaces into the core, or
@@ -216,5 +222,46 @@ describe("each step, checked against the account just before it runs", () => {
 		} as const;
 		expect(refusalBefore(expecting, on08, "loopback")).toMatch(/loopback holds no spaces/);
 		expect(refusalBefore(expecting, from07, "loopback")).toBeUndefined();
+	});
+});
+
+describe("a version, as `cf workers versions get` prints it", () => {
+	// The shape cf 1.0.0-beta.24 printed on GingerBelle, 2026-11-11, for a 0.7.1 edge and a 0.8 core:
+	// bindings and annotations at the top level.
+	const edge071 = {
+		id: "9294caec-ef88-404c-a6f0-9853a08094a7",
+		annotations: { "workers/triggered_by": "upload" },
+		bindings: [
+			{ name: "CF_VERSION_METADATA", type: "version_metadata" },
+			{ name: "FILES", type: "r2_bucket", bucket_name: "loopback-rehearsal-files" },
+			{ name: "LOOPBACK_PLAN", type: "plain_text" },
+			{ name: "LOOPBACK_TOKEN", type: "secret_text" },
+		],
+	};
+	const core = {
+		id: "711740b1-bcba-42bb-8e4f-e194414ebc9b",
+		annotations: { "workers/tag": "core-space-created", "workers/triggered_by": "upload" },
+		bindings: [
+			{ name: "CF_VERSION_METADATA", type: "version_metadata" },
+			{ name: "FILES", type: "r2_bucket", bucket_name: "loopback-trial-core-files" },
+		],
+	};
+
+	it("names the bucket a 0.7 edge binds as FILES", () => {
+		expect(filesBucketOf(edge071)).toBe("loopback-rehearsal-files");
+	});
+
+	it("names the bucket a core binds as FILES", () => {
+		expect(filesBucketOf(core)).toBe("loopback-trial-core-files");
+	});
+
+	it("names no bucket for a version without FILES, or no version", () => {
+		expect(filesBucketOf({ ...core, bindings: core.bindings.slice(0, 1) })).toBeUndefined();
+		expect(filesBucketOf(undefined)).toBeUndefined();
+	});
+
+	it("reads the tag this script gave a version, and none it didn't", () => {
+		expect(tagOfVersion(core)).toBe("core-space-created");
+		expect(tagOfVersion(edge071)).toBeUndefined();
 	});
 });

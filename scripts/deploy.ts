@@ -23,7 +23,15 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { type Observed, planDeploy, Refused, refusalBefore, type Step } from "./deploy-plan.ts";
+import {
+	filesBucketOf,
+	type Observed,
+	planDeploy,
+	Refused,
+	refusalBefore,
+	type Step,
+	tagOfVersion,
+} from "./deploy-plan.ts";
 
 const root = resolve(import.meta.dirname, "..");
 const EDGE_DIR = join(root, "apps/loopback");
@@ -91,25 +99,6 @@ const currentVersion = (worker: string): Record<string, unknown> | undefined => 
 	return typeof version === "object" && version !== null
 		? (version as Record<string, unknown>)
 		: undefined;
-};
-
-/** The bucket a version binds as `FILES`, if it binds one. */
-const filesBucketOf = (version: Record<string, unknown> | undefined): string | undefined => {
-	const resources = version?.["resources"] as { readonly bindings?: unknown } | undefined;
-	const files = records(resources?.bindings).find(
-		(binding) => binding["name"] === "FILES" && binding["type"] === "r2_bucket",
-	);
-	return typeof files?.["bucket_name"] === "string" ? files["bucket_name"] : undefined;
-};
-
-/** The tag this script gave a version, if it gave it one. */
-const tagOfVersion = (version: Record<string, unknown> | undefined): string | undefined => {
-	const annotations = (version?.["annotations"] ??
-		(version?.["metadata"] as Record<string, unknown> | undefined)?.["annotations"]) as
-		| Record<string, unknown>
-		| undefined;
-	const tag = annotations?.["workers/tag"];
-	return typeof tag === "string" ? tag : undefined;
 };
 
 /** What the account holds of the deployment named `name`. */
