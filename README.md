@@ -118,15 +118,26 @@ to repeat, and the deploy reads what the account holds before it plans.
 **Under another name.** Set `LOOPBACK_NAME` on every deploy to run a deployment as `<name>` and
 `<name>-core`, beside another on the same account.
 
-**Remove it.** Delete both Workers, the edge first, then empty and delete the core's bucket:
+**Remove it.** Delete both Workers, the edge first. Each asks you to confirm, and deleting the core
+deletes every ask in it:
 
 ```sh
 pnpm --filter ./apps/loopback exec cf workers delete loopback
 pnpm --filter ./apps/loopback exec cf workers delete loopback-core
 ```
 
+Then empty the core's bucket and delete it. A bucket that still holds images can't be deleted:
+
+```sh
+bucket=loopback-core-files
+keys=$(pnpm --filter ./apps/loopback exec cf r2 objects list --bucket-name $bucket | jq -c 'map(.key)')
+pnpm --filter ./apps/loopback exec cf r2 objects bulk-delete --bucket-name $bucket --body "$keys"
+pnpm --filter ./apps/loopback exec cf r2 buckets delete $bucket
+```
+
 The bucket is `loopback-files` for a deployment upgraded from 0.7, and `loopback-core-files` for one
-installed fresh.
+installed fresh. The list comes a page at a time, so repeat the `keys=` and `bulk-delete` lines until
+it is empty before you delete the bucket.
 
 ## Free or Paid
 
