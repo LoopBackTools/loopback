@@ -19,7 +19,6 @@ if (url === undefined || token === undefined) {
 	process.exit(2);
 }
 
-const TASKS = "io.modelcontextprotocol/tasks";
 /**
  * The longest the check holds a listen stream open. A deployment that publishes nothing should close
  * it at once; one that doesn't would hold it, and the check, open for good.
@@ -49,7 +48,6 @@ const rpc = async (
 	params: Record<string, unknown>,
 	options: {
 		readonly name?: string;
-		readonly tasks?: boolean;
 		readonly progress?: boolean;
 		readonly holdMs?: number;
 	} = {},
@@ -81,8 +79,7 @@ const rpc = async (
 					...(options.progress === true ? { progressToken: id } : {}),
 					"io.modelcontextprotocol/protocolVersion": "2026-07-28",
 					"io.modelcontextprotocol/clientInfo": { name: "cpu-check", version: "1.0.0" },
-					"io.modelcontextprotocol/clientCapabilities":
-						options.tasks === true ? { extensions: { [TASKS]: {} } } : {},
+					"io.modelcontextprotocol/clientCapabilities": {},
 				},
 			},
 		}),
@@ -169,30 +166,6 @@ const listen = await rpc(
 report(
 	`subscriptions/listen: ${listen.cut ? "still open, cut" : "closed"} after ${listen.ms} ms, ${listen.messages.length} frames`,
 );
-
-// A background task, polled at the interval it asks for, answered after 20 seconds.
-const taskQuestion = `CPU check task ${run}?`;
-const started = await rpc(
-	"tools/call",
-	{ name: "ask_question", arguments: { question: taskQuestion, project: "cpu-check" } },
-	{ name: "ask_question", tasks: true },
-);
-const taskId = String(started.answer?.result?.["taskId"]);
-const answerAt = Date.now() + 20_000;
-let polls = 0;
-let answered = false;
-for (;;) {
-	const polled = await rpc("tasks/get", { taskId }, { name: taskId, tasks: true });
-	polls += 1;
-	const status = polled.answer?.result?.["status"];
-	if (status === "completed" || status === "cancelled") break;
-	if (!answered && Date.now() >= answerAt) {
-		await reply(taskId.slice(0, taskId.lastIndexOf(":")), "Answered by the CPU check.");
-		answered = true;
-	}
-	await pause(Number(polled.answer?.result?.["pollIntervalMs"] ?? 2_000));
-}
-report(`task: completed after ${polls} polls`);
 
 // A blocking question, answered after 90 seconds.
 const blockingQuestion = `CPU check wait ${run}?`;
